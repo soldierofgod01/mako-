@@ -29,7 +29,7 @@ interface AppStore {
 }
 
 export const useAppStore = create<AppStore>((set) => ({
-  activeModule: "insights",
+  activeModule: "bias-scanner",
   setActiveModule: (m) => set({ activeModule: m }),
   radarView: "leaderboard",
   setRadarView: (v) => set({ radarView: v }),

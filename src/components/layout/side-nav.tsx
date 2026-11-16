@@ -5,11 +5,9 @@ import { cn } from "@/lib/utils";
 import {
   Waves,
   ScanSearch,
-  Anchor,
+  Radar,
   Briefcase,
   Bell,
-  ArrowLeftRight,
-  Sparkles,
   Compass,
   ChevronLeft,
   ChevronRight,
@@ -18,11 +16,9 @@ import {
 } from "lucide-react";
 
 const modules = [
-  { id: "insights", label: "Insights", icon: Sparkles, color: "text-scanner" },
+  { id: "bias-scanner", label: "Bias Scanner", icon: Radar, color: "text-radar" },
   { id: "bias", label: "Bias", icon: Compass, color: "text-radar" },
-  { id: "whale-flow", label: "Whale Flow", icon: Anchor, color: "text-portfolio" },
   { id: "scanner", label: "Scanner", icon: ScanSearch, color: "text-scanner" },
-  { id: "flows", label: "Exchange Flows", icon: ArrowLeftRight, color: "text-scanner" },
   { id: "portfolio", label: "Portfolio", icon: Briefcase, color: "text-portfolio" },
   { id: "alerts", label: "Alerts", icon: Bell, color: "text-alerts" },
 ];
