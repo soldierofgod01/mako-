@@ -3,8 +3,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, Search } from "lucide-react";
 import { useAppStore } from "@/stores/app-store";
-import { useOrderflow, type OrderflowState } from "@/lib/hooks/use-orderflow";
-import { TradingViewChart } from "@/components/charts/tradingview-chart";
+import { useOrderflow, CHART_INTERVALS, type ChartInterval, type OrderflowState } from "@/lib/hooks/use-orderflow";
+import { OrderflowChart } from "./orderflow-chart";
 import { TokenIcon } from "@/components/scanner/token-icon";
 import { CvdChart } from "./cvd-chart";
 import { fmtUsd, WARMUP_MINUTES, type BiasResult, type Signal } from "@/lib/bias/engine";
@@ -44,21 +44,35 @@ export function BiasModule() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const of = useOrderflow(biasCoin);
+  const [interval, setIntervalState] = useState<ChartInterval>("15m");
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem("mako:chart:interval") as ChartInterval | null;
+      if (v && v in CHART_INTERVALS) setIntervalState(v);
+    } catch { /* ignore */ }
+  }, []);
+  const setInterval_ = (i: ChartInterval) => {
+    setIntervalState(i);
+    try { localStorage.setItem("mako:chart:interval", i); } catch { /* ignore */ }
+  };
+
+  const of = useOrderflow(biasCoin, interval);
+  const liqLevels = of.cohorts?.data?.liqLevels ?? [];
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-bg-base">
       <HeaderBar coin={biasCoin} onPick={setBiasCoin} of={of} />
       <div className="flex-1 flex min-h-0">
         {/* Left — chart */}
-        <section className="flex-1 min-w-0 border-r border-border bg-[#0A0A0A]">
-          <TradingViewChart symbol={biasCoin} interval="15" />
+        <section className="flex-1 min-w-0 border-r border-border bg-[#0A0A0C]">
+          <OrderflowChart key={biasCoin} of={of} interval={interval} onInterval={setInterval_} liqLevels={liqLevels} />
         </section>
         {/* Right — analysis */}
         <aside className="w-[340px] lg:w-[400px] xl:w-[460px] shrink-0 overflow-y-auto">
           <div className="p-4 flex flex-col gap-4">
             <BiasCard bias={of.bias} of={of} />
             <SignalList bias={of.bias} />
+            <LiqPanel of={of} />
             <CohortPanel of={of} />
             <CvdPanel of={of} />
             <PrintsPanel of={of} />
@@ -268,12 +282,20 @@ function BiasCard({ bias, of }: { bias: BiasResult | null; of: OrderflowState })
 
       <p className="mt-4 text-[13.5px] text-txt-primary leading-[1.5]">{bias.summary}</p>
 
+      {of.mtf && <MtfRow mtf={of.mtf} />}
+
       <div className="mt-4 grid grid-cols-3 gap-2">
         <MiniStat label="Confidence" value={`${bias.confidence}%`} />
         <MiniStat label="Agree / against" value={`${bias.agreeing} / ${bias.opposing}`} />
         <MiniStat label="Data coverage" value={`${Math.round(bias.coverage * 100)}%`} />
       </div>
 
+      {of.restored && of.restored.minutes > 0 && (
+        <p className="mt-3 text-[11.5px] text-txt-muted">
+          Resumed {of.restored.minutes} min of saved tape
+          {of.restored.gapSec > 90 ? ` · ${Math.round(of.restored.gapSec / 60)} min gap while away (not reconstructed)` : ""}.
+        </p>
+      )}
       {bias.warmingUp && (
         <div className="mt-4">
           <div className="flex justify-between ds-label mb-1.5">
@@ -518,6 +540,98 @@ function CohortRow({ label, side }: { label: string; side: CohortSide }) {
         <span>L {fmtUsd(side.longUsd).replace("+", "")} · {side.longWallets}</span>
         <span>{side.shortWallets} · S {fmtUsd(side.shortUsd).replace("+", "")}</span>
       </div>
+    </div>
+  );
+}
+
+// ─── Multi-timeframe ────────────────────────────────────────────
+
+function MtfRow({ mtf }: { mtf: NonNullable<OrderflowState["mtf"]> }) {
+  const items = [mtf["5m"], mtf["15m"], mtf["1h"]];
+  const dirs = items.filter((b) => !b.warmingUp).map((b) => b.direction);
+  const conflict = dirs.includes("long") && dirs.includes("short");
+  return (
+    <div className="mt-4">
+      <div className="grid grid-cols-3 gap-2">
+        {items.map((b) => {
+          const tone = b.direction === "long" ? "text-positive" : b.direction === "short" ? "text-negative" : "text-txt-secondary";
+          return (
+            <div key={b.horizon} className={cn("rounded-[8px] border px-2.5 py-2", b.horizon === "15m" ? "border-border-strong bg-elevated/40" : "border-border bg-bg-base")}>
+              <div className="flex items-baseline justify-between">
+                <span className="ds-num text-[11px] text-txt-muted">{b.horizon}</span>
+                <span className={cn("ds-num text-[12.5px] font-semibold", b.warmingUp ? "text-txt-dim" : tone)}>
+                  {b.warmingUp ? "…" : `${b.score > 0 ? "+" : ""}${b.score}`}
+                </span>
+              </div>
+              <div className={cn("text-[11.5px] font-medium mt-0.5 capitalize", b.warmingUp ? "text-txt-dim" : tone)}>
+                {b.warmingUp ? "Warming up" : b.direction}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <p className="mt-2 text-[11.5px] text-txt-muted leading-[1.45]">
+        {conflict
+          ? "Timeframes disagree — short-term flow is fighting the bigger picture. Expect chop or a turn."
+          : items.every((b) => !b.warmingUp && b.direction === items[0].direction && b.direction !== "neutral")
+            ? "All timeframes agree."
+            : "15m is the main read. 5m = right now, 1h = bigger picture (needs ~20 min of tape)."}
+      </p>
+    </div>
+  );
+}
+
+// ─── Liquidation levels ─────────────────────────────────────────
+
+function LiqPanel({ of }: { of: OrderflowState }) {
+  const px = of.lastPx ?? 0;
+  const levels = (of.cohorts?.data?.liqLevels ?? []).filter((l) => px > 0 && Math.abs(l.px - px) / px <= 0.25);
+  const above = levels.filter((l) => l.px > px).sort((a, b) => a.px - b.px).slice(0, 3);
+  const below = levels.filter((l) => l.px <= px).sort((a, b) => b.px - a.px).slice(0, 3);
+  return (
+    <div className="ds-panel">
+      <div className="px-4 pt-4 flex items-baseline justify-between">
+        <span className="ds-section-title">Liquidation levels</span>
+        <span className="ds-label">tracked wallets</span>
+      </div>
+      <p className="px-4 mt-1 text-[11.5px] text-txt-muted leading-[1.5]">
+        Where tracked sharps and donors get force-closed. A move into a cluster can accelerate as liquidations fire. Tracked
+        wallets only, not the whole market.
+      </p>
+      {!of.cohorts ? (
+        <div className="m-4 h-[60px] skeleton" />
+      ) : above.length + below.length === 0 ? (
+        <div className="px-4 py-4 text-[12px] text-txt-muted">No tracked liquidations within 25% of price.</div>
+      ) : (
+        <div className="px-4 pt-2 pb-3">
+          {[...above.reverse(), null, ...below].map((l, i) =>
+            l === null ? (
+              <div key="px" className="flex items-center gap-2 my-1.5">
+                <span className="flex-1 h-px bg-border-strong" />
+                <span className="ds-num text-[11px] text-txt-primary">{fmtPrice(px)}</span>
+                <span className="flex-1 h-px bg-border-strong" />
+              </div>
+            ) : (
+              <LiqRow key={i} l={l} px={px} />
+            )
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LiqRow({ l, px }: { l: import("@/lib/cohorts/cohorts").LiqLevel; px: number }) {
+  const longSide = l.longUsd >= l.shortUsd;
+  const usd = l.longUsd + l.shortUsd;
+  const dist = ((l.px - px) / px) * 100;
+  return (
+    <div className="flex items-center h-7 text-[12px]">
+      <span className={cn("w-[86px] font-medium", longSide ? "text-warning" : "text-[#60A5FA]")}>{longSide ? "Long liqs" : "Short liqs"}</span>
+      <span className="ds-num text-txt-primary flex-1">{fmtPrice(l.px)}</span>
+      <span className="ds-num text-txt-secondary w-16 text-right">{dist > 0 ? "+" : ""}{dist.toFixed(1)}%</span>
+      <span className="ds-num text-txt-primary w-20 text-right">{fmtUsd(usd).replace("+", "")}</span>
+      <span className="ds-num text-txt-muted w-10 text-right">{l.wallets}w</span>
     </div>
   );
 }

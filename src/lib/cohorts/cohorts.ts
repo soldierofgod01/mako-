@@ -67,6 +67,17 @@ export function selectCohorts(rows: LeaderboardRow[], size = COHORT_SIZE) {
 export interface WalletPosition {
   coin: string;
   notionalUsd: number; // signed: + long, − short
+  liqPx?: number | null;
+}
+
+/** A price where tracked wallets get liquidated (clustered within 0.3%). */
+export interface LiqLevel {
+  px: number;
+  longUsd: number;   // longs liquidated here (forced sells — below price)
+  shortUsd: number;  // shorts liquidated here (forced buys — above price)
+  sharpsUsd: number;
+  donorsUsd: number;
+  wallets: number;
 }
 
 export interface CohortSide {
@@ -82,6 +93,39 @@ export interface CoinCohorts {
   sharps: CohortSide;
   donors: CohortSide;
   divergence: number;   // [-100, 100]  + = sharps longer than donors
+  liqLevels: LiqLevel[];
+}
+
+const LIQ_CLUSTER = 0.003;
+const MAX_LIQ_LEVELS = 10;
+
+export function clusterLiqs(
+  raw: { px: number; usd: number; long: boolean; sharp: boolean }[]
+): LiqLevel[] {
+  const pts = raw.filter((r) => r.px > 0 && r.usd > 0).sort((a, b) => a.px - b.px);
+  const levels: (LiqLevel & { wpx: number })[] = [];
+  for (const p of pts) {
+    const last = levels[levels.length - 1];
+    if (last && (p.px - last.px) / last.px <= LIQ_CLUSTER) {
+      last.wpx += p.px * p.usd;
+      if (p.long) last.longUsd += p.usd; else last.shortUsd += p.usd;
+      if (p.sharp) last.sharpsUsd += p.usd; else last.donorsUsd += p.usd;
+      last.wallets++;
+      last.px = last.wpx / (last.longUsd + last.shortUsd); // usd-weighted centre
+    } else {
+      levels.push({
+        px: p.px, wpx: p.px * p.usd,
+        longUsd: p.long ? p.usd : 0, shortUsd: p.long ? 0 : p.usd,
+        sharpsUsd: p.sharp ? p.usd : 0, donorsUsd: p.sharp ? 0 : p.usd,
+        wallets: 1,
+      });
+    }
+  }
+  return levels
+    .sort((a, b) => b.longUsd + b.shortUsd - (a.longUsd + a.shortUsd))
+    .slice(0, MAX_LIQ_LEVELS)
+    .map(({ wpx: _w, ...l }) => l)
+    .sort((a, b) => b.px - a.px);
 }
 
 function emptySide(): CohortSide {
@@ -113,11 +157,29 @@ export function buildCoinCohorts(sharpPositions: WalletPosition[][], donorPositi
   const sharps = aggregateSide(sharpPositions);
   const donors = aggregateSide(donorPositions);
   const coins = new Set([...sharps.keys(), ...donors.keys()]);
+
+  const liqRaw = new Map<string, { px: number; usd: number; long: boolean; sharp: boolean }[]>();
+  const addLiqs = (list: WalletPosition[][], sharp: boolean) => {
+    for (const positions of list) for (const p of positions) {
+      if (!p.liqPx || !p.notionalUsd) continue;
+      const arr = liqRaw.get(p.coin) ?? [];
+      arr.push({ px: p.liqPx, usd: Math.abs(p.notionalUsd), long: p.notionalUsd > 0, sharp });
+      liqRaw.set(p.coin, arr);
+    }
+  };
+  addLiqs(sharpPositions, true);
+  addLiqs(donorPositions, false);
+
   const result: Record<string, CoinCohorts> = {};
   for (const coin of coins) {
     const s = sharps.get(coin) ?? emptySide();
     const d = donors.get(coin) ?? emptySide();
-    result[coin] = { sharps: s, donors: d, divergence: Math.round(((s.net - d.net) / 2) * 100) };
+    result[coin] = {
+      sharps: s,
+      donors: d,
+      divergence: Math.round(((s.net - d.net) / 2) * 100),
+      liqLevels: clusterLiqs(liqRaw.get(coin) ?? []),
+    };
   }
   return result;
 }

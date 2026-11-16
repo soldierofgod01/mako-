@@ -79,6 +79,7 @@ export interface BiasResult {
   opposing: number;
   signals: Signal[];
   summary: string;
+  horizon: Horizon["id"];
   tapeMinutes: number;
   warmingUp: boolean;
 }
@@ -98,6 +99,28 @@ export const WARMUP_MINUTES = 3;
 export const DELTA_WINDOW_MS = 15 * 60_000;
 export const SHORT_WINDOW_MS = 5 * 60_000;
 export const BOOK_WINDOW_MS = 5 * 60_000;
+
+// ─── Horizons ──────────────────────────────────────────────────
+// Same signals, different lookbacks. 15m is the primary read (and the one
+// the track record logs). 5m = what's happening right now; 1h = the bigger
+// picture. When they disagree, short-term flow is fighting the trend.
+export interface Horizon {
+  id: "5m" | "15m" | "1h";
+  shortMs: number;       // recent delta window
+  longMs: number;        // delta persistence / absorption / large prints
+  bookMs: number;        // book imbalance averaging
+  oiMs: number;          // OI-vs-price lookback
+  minOiSpanMs: number;   // OI needs at least this much history
+  minTapeMin: number;    // delta needs this much tape
+  minAbsorbMin: number;  // absorption needs this much tape
+  warmupMin: number;     // below this, the read is "warming up"
+}
+const MIN = 60_000;
+export const H5: Horizon = { id: "5m", shortMs: 1 * MIN, longMs: 5 * MIN, bookMs: 2 * MIN, oiMs: 15 * MIN, minOiSpanMs: 3 * MIN, minTapeMin: 1, minAbsorbMin: 2, warmupMin: 2 };
+export const H15: Horizon = { id: "15m", shortMs: 5 * MIN, longMs: 15 * MIN, bookMs: 5 * MIN, oiMs: 60 * MIN, minOiSpanMs: 5 * MIN, minTapeMin: 2, minAbsorbMin: 3, warmupMin: WARMUP_MINUTES };
+export const H60: Horizon = { id: "1h", shortMs: 15 * MIN, longMs: 60 * MIN, bookMs: 15 * MIN, oiMs: 60 * MIN, minOiSpanMs: 20 * MIN, minTapeMin: 20, minAbsorbMin: 20, warmupMin: 20 };
+export const HORIZONS = [H5, H15, H60] as const;
+const lbl = (ms: number) => (ms >= 60 * MIN ? `${ms / (60 * MIN)}h` : `${ms / MIN}m`);
 export const NEUTRAL_BAND = 20;   // |score| < 20 → neutral
 export const STRONG_BAND = 45;
 
@@ -162,13 +185,13 @@ const pct = (x: number, d = 2) => `${x > 0 ? "+" : x < 0 ? "−" : ""}${Math.abs
 
 // ─── Signals ────────────────────────────────────────────────────
 
-export function deltaSignal(trades: Trade[], now: number): Signal {
+export function deltaSignal(trades: Trade[], now: number, h: Horizon = H15): Signal {
   const base: Signal = { id: "delta", label: "Aggressive delta", weight: WEIGHTS.delta, available: false, score: 0, value: "—", read: "" };
-  const d15 = deltaStats(trades, now - DELTA_WINDOW_MS);
-  const d5 = deltaStats(trades, now - SHORT_WINDOW_MS);
+  const d15 = deltaStats(trades, now - h.longMs);
+  const d5 = deltaStats(trades, now - h.shortMs);
   const span = trades.length ? (now - trades[0].t) / 60_000 : 0;
-  if (d15.n < 30 || span < 2) {
-    return { ...base, why: "Collecting trades — needs ~2 min of tape." };
+  if (d15.n < 30 || span < h.minTapeMin) {
+    return { ...base, why: `Collecting trades — needs ~${h.minTapeMin} min of tape (have ${Math.floor(span)}).` };
   }
   // Blend: recent 5m matters more, 15m gives persistence.
   const ratio = 0.6 * d5.ratio + 0.4 * d15.ratio;
@@ -179,8 +202,8 @@ export function deltaSignal(trades: Trade[], now: number): Signal {
     ...base,
     available: true,
     score,
-    value: `${fmtUsd(d5.net)} 5m · ${fmtUsd(d15.net)} 15m`,
-    read: `${who} — ${Math.abs(Math.round(d15.ratio * 100))}% net ${d15.ratio >= 0 ? "buy" : "sell"} imbalance over 15m.`,
+    value: `${fmtUsd(d5.net)} ${lbl(h.shortMs)} · ${fmtUsd(d15.net)} ${lbl(h.longMs)}`,
+    read: `${who} — ${Math.abs(Math.round(d15.ratio * 100))}% net ${d15.ratio >= 0 ? "buy" : "sell"} imbalance over ${lbl(h.longMs)}.`,
   };
 }
 
@@ -189,11 +212,11 @@ export function deltaSignal(trades: Trade[], now: number): Signal {
  * move price means a passive player is soaking it up — a reversal tell.
  * Only scores when aggression is meaningful AND price failed to follow.
  */
-export function absorptionSignal(trades: Trade[], candles: Candle[], now: number): Signal {
+export function absorptionSignal(trades: Trade[], candles: Candle[], now: number, h: Horizon = H15): Signal {
   const base: Signal = { id: "absorption", label: "Absorption", weight: WEIGHTS.absorption, available: false, score: 0, value: "—", read: "" };
   const span = trades.length ? (now - trades[0].t) / 60_000 : 0;
-  const windowMin = Math.min(15, span);
-  if (windowMin < 3) return { ...base, why: "Needs ~3 min of tape to compare effort vs result." };
+  const windowMin = Math.min(h.longMs / MIN, span);
+  if (windowMin < h.minAbsorbMin) return { ...base, why: `Needs ~${h.minAbsorbMin} min of tape to compare effort vs result.` };
   const since = now - windowMin * 60_000;
   const d = deltaStats(trades, since);
   const p0 = priceAt(trades, since);
@@ -230,9 +253,9 @@ export function absorptionSignal(trades: Trade[], candles: Candle[], now: number
   };
 }
 
-export function bookSignal(samples: BookSample[], now: number): Signal {
+export function bookSignal(samples: BookSample[], now: number, h: Horizon = H15): Signal {
   const base: Signal = { id: "book", label: "Book imbalance", weight: WEIGHTS.book, available: false, score: 0, value: "—", read: "" };
-  const recent = samples.filter((s) => s.t >= now - BOOK_WINDOW_MS);
+  const recent = samples.filter((s) => s.t >= now - h.bookMs);
   if (recent.length < 10) return { ...base, why: "Sampling the order book…" };
   // Time-average to blunt spoofed walls that flash in and out.
   const avg = recent.reduce((s, x) => s + x.imbalance, 0) / recent.length;
@@ -242,20 +265,21 @@ export function bookSignal(samples: BookSample[], now: number): Signal {
     ...base,
     available: true,
     score,
-    value: `${avg >= 0 ? "+" : "−"}${Math.abs(Math.round(avg * 100))}% (5m avg)`,
+    value: `${avg >= 0 ? "+" : "−"}${Math.abs(Math.round(avg * 100))}% (${lbl(h.bookMs)} avg)`,
     read: `${side} within 0.5% of price. Resting orders can be pulled — treat as supporting evidence only.`,
   };
 }
 
-export function oiSignal(ctx: CtxSample[], now: number): Signal {
+export function oiSignal(ctx: CtxSample[], now: number, h: Horizon = H15): Signal {
   const base: Signal = { id: "oi", label: "Open interest vs price", weight: WEIGHTS.oi, available: false, score: 0, value: "—", read: "" };
-  if (ctx.length < 2) return { ...base, why: "Tracking OI — needs ~5 min of samples." };
-  const windowStart = now - 60 * 60_000;
+  const need = `Tracking OI — needs ~${h.minOiSpanMs / MIN} min of samples.`;
+  if (ctx.length < 2) return { ...base, why: need };
+  const windowStart = now - h.oiMs;
   const inWin = ctx.filter((c) => c.t >= windowStart);
   const first = inWin[0];
   const last = inWin[inWin.length - 1];
-  if (!first || !last || last.t - first.t < 5 * 60_000) {
-    return { ...base, why: "Tracking OI — needs ~5 min of samples." };
+  if (!first || !last || last.t - first.t < h.minOiSpanMs) {
+    return { ...base, why: need };
   }
   const dOi = ((last.oi - first.oi) / first.oi) * 100;
   const dPx = ((last.markPx - first.markPx) / first.markPx) * 100;
@@ -288,9 +312,9 @@ export function oiSignal(ctx: CtxSample[], now: number): Signal {
   return { ...base, available: true, score, value: `OI ${pct(dOi)} · px ${pct(dPx)} (${mins}m)`, read };
 }
 
-export function whaleSignal(trades: Trade[], now: number, threshold: number): Signal {
+export function whaleSignal(trades: Trade[], now: number, threshold: number, h: Horizon = H15): Signal {
   const base: Signal = { id: "whales", label: "Large prints", weight: WEIGHTS.whales, available: false, score: 0, value: "—", read: "" };
-  const big = trades.filter((t) => t.t >= now - DELTA_WINDOW_MS && t.usd >= threshold);
+  const big = trades.filter((t) => t.t >= now - h.longMs && t.usd >= threshold);
   if (big.length < 3) {
     return { ...base, why: `Waiting for large prints (≥ ${fmtUsd(threshold).replace("+", "")}) — ${big.length} so far.` };
   }
@@ -392,15 +416,15 @@ export interface EngineInput {
   cohortLoaded?: boolean;
 }
 
-export function computeBias(input: EngineInput): BiasResult {
+export function computeBias(input: EngineInput, h: Horizon = H15): BiasResult {
   const { trades, book, ctx, candles, volume24hUsd, now, cohort, cohortLoaded = false } = input;
   const signals: Signal[] = [
-    deltaSignal(trades, now),
-    absorptionSignal(trades, candles, now),
-    oiSignal(ctx, now),
+    deltaSignal(trades, now, h),
+    absorptionSignal(trades, candles, now, h),
+    oiSignal(ctx, now, h),
     cohortSignal(cohort, cohortLoaded),
-    whaleSignal(trades, now, whaleThreshold(volume24hUsd)),
-    bookSignal(book, now),
+    whaleSignal(trades, now, whaleThreshold(volume24hUsd), h),
+    bookSignal(book, now, h),
     crowdingSignal(ctx),
   ];
 
@@ -443,7 +467,7 @@ export function computeBias(input: EngineInput): BiasResult {
   const confidence = Math.round(clamp(Math.abs(score) / 60, 0, 1) * coverage * (0.5 + 0.5 * agreement) * 100);
 
   const tapeMinutes = trades.length ? (now - trades[0].t) / 60_000 : 0;
-  const warmingUp = tapeMinutes < WARMUP_MINUTES;
+  const warmingUp = tapeMinutes < h.warmupMin;
 
   return {
     score,
@@ -455,6 +479,7 @@ export function computeBias(input: EngineInput): BiasResult {
     opposing,
     signals,
     summary: buildSummary(direction, avail),
+    horizon: h.id,
     tapeMinutes,
     warmingUp,
   };

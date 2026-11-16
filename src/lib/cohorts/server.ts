@@ -38,7 +38,7 @@ async function loadCohorts() {
 }
 
 interface ChState {
-  assetPositions: { position: { coin: string; szi: string; positionValue: string } }[];
+  assetPositions: { position: { coin: string; szi: string; positionValue: string; liquidationPx: string | null } }[];
 }
 
 async function positionsOf(address: string): Promise<WalletPosition[] | null> {
@@ -53,7 +53,8 @@ async function positionsOf(address: string): Promise<WalletPosition[] | null> {
     const s = (await res.json()) as ChState;
     return (s.assetPositions ?? []).map(({ position: p }) => {
       const value = Math.abs(parseFloat(p.positionValue));
-      return { coin: p.coin, notionalUsd: parseFloat(p.szi) < 0 ? -value : value };
+      const liq = p.liquidationPx ? parseFloat(p.liquidationPx) : null;
+      return { coin: p.coin, notionalUsd: parseFloat(p.szi) < 0 ? -value : value, liqPx: liq && liq > 0 ? liq : null };
     });
   } catch {
     return null;
