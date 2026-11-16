@@ -100,36 +100,79 @@ export class HeatmapLayer extends Layer {
     const tm = this.timeMap();
     const s = this.series;
     if (!tm || !s || this.frames.length < 2) return;
-    const scale = heatScale(this.frames.slice(-400));
+    const coarse = this.frames.filter((f) => f.coarse);
+    const fine = this.frames.filter((f) => !f.coarse);
     target.useBitmapCoordinateSpace(({ context: ctx, horizontalPixelRatio: hr, verticalPixelRatio: vr, bitmapSize }) => {
       const W = bitmapSize.width;
       const H = bitmapSize.height;
-      let prevX2 = -Infinity;
-      for (let i = 0; i < this.frames.length; i++) {
-        const f = this.frames[i];
-        const next = this.frames[i + 1];
-        const t2 = next ? next.t : Math.min(Date.now(), f.t + 15_000);
-        const xa = tm.x(f.t);
-        const xb = tm.x(t2);
-        if (xa == null || xb == null) continue;
-        let x1 = Math.round(xa * hr);
-        const x2 = Math.round(xb * hr);
-        if (x2 <= 0 || x1 >= W) continue;
-        if (x1 < prevX2) x1 = prevX2; // no overdraw between frames
-        if (x2 - x1 < 1) continue;
-        prevX2 = x2;
-        for (const [px, usd] of f.levels) {
-          const ya = s.priceToCoordinate(px + f.tick / 2);
-          const yb = s.priceToCoordinate(px - f.tick / 2);
-          if (ya == null || yb == null) continue;
-          const y1 = Math.round(Math.min(ya, yb) * vr);
-          const y2 = Math.round(Math.max(ya, yb) * vr);
-          if (y2 <= 0 || y1 >= H) continue;
-          const v = usd / scale;
-          if (v < 0.04) continue;
-          ctx.fillStyle = heatColor(v);
-          ctx.fillRect(x1, y1, x2 - x1, Math.max(1, y2 - y1));
+      const pass = (frames: HeatFrame[], dim: number) => {
+        if (frames.length < 2) return;
+        // Normalise each book separately; 98th pct so only real walls saturate.
+        const scale = heatScale(frames.slice(-300), 0.98);
+        let prevX2 = -Infinity;
+        for (let i = 0; i < frames.length; i++) {
+          const f = frames[i];
+          const next = frames[i + 1];
+          const t2 = next ? next.t : Math.min(Date.now(), f.t + 15_000);
+          const xa = tm.x(f.t);
+          const xb = tm.x(t2);
+          if (xa == null || xb == null) continue;
+          let x1 = Math.round(xa * hr);
+          const x2 = Math.round(xb * hr);
+          if (x2 <= 0 || x1 >= W) continue;
+          if (x1 < prevX2) x1 = prevX2;
+          if (x2 - x1 < 1) continue;
+          prevX2 = x2;
+          for (const [px, usd] of f.levels) {
+            const v = usd / scale;
+            if (v < 0.1) continue;
+            const ya = s.priceToCoordinate(px + f.tick / 2);
+            const yb = s.priceToCoordinate(px - f.tick / 2);
+            if (ya == null || yb == null) continue;
+            const y1 = Math.round(Math.min(ya, yb) * vr);
+            const y2 = Math.round(Math.max(ya, yb) * vr);
+            if (y2 <= 0 || y1 >= H) continue;
+            ctx.globalAlpha = dim;
+            ctx.fillStyle = heatColor(v);
+            ctx.fillRect(x1, y1, x2 - x1, Math.max(1, y2 - y1));
+          }
         }
+        ctx.globalAlpha = 1;
+      };
+      pass(coarse, 0.45); // wide, blocky context at the edges
+      pass(fine, 1);      // full resolution near price, on top
+    });
+  }
+}
+
+// ─── Volume profile (session, right edge of the price pane) ──────
+export class ProfileLayer extends Layer {
+  bins: { lo: number; hi: number; vol: number }[] = [];
+  poc = 0;
+  vah = 0;
+  val = 0;
+  width = 90;
+  private view = new View("normal", (target) => this.drawProfile(target));
+  paneViews() { return this.enabled ? [this.view] : []; }
+
+  private drawProfile(target: Target) {
+    const s = this.series;
+    if (!s || !this.bins.length) return;
+    const maxV = Math.max(...this.bins.map((b) => b.vol), 1);
+    target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
+      const right = mediaSize.width;
+      for (const b of this.bins) {
+        const ya = s.priceToCoordinate(b.hi);
+        const yb = s.priceToCoordinate(b.lo);
+        if (ya == null || yb == null) continue;
+        const top = Math.min(ya, yb);
+        const h = Math.max(1, Math.abs(yb - ya) - 1);
+        if (top > mediaSize.height || top + h < 0) continue;
+        const w = (b.vol / maxV) * this.width;
+        const mid = (b.lo + b.hi) / 2;
+        const isPoc = this.poc >= b.lo && this.poc <= b.hi;
+        ctx.fillStyle = isPoc ? "rgba(51,255,163,0.5)" : mid >= this.val && mid <= this.vah ? "rgba(155,155,160,0.3)" : "rgba(155,155,160,0.13)";
+        ctx.fillRect(right - w, top, w, h);
       }
     });
   }

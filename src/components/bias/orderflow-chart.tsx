@@ -16,7 +16,7 @@ import {
 } from "lightweight-charts";
 import { volumeProfile, vwapSeries, type VolumeProfile } from "@/lib/bias/chart-math";
 import { buildFootprint, niceStep } from "@/lib/bias/footprint";
-import { BubbleLayer, FootprintLayer, HeatmapLayer } from "./primitives";
+import { BubbleLayer, FootprintLayer, HeatmapLayer, ProfileLayer } from "./primitives";
 import { fmtUsd } from "@/lib/bias/engine";
 import type { LiqLevel } from "@/lib/cohorts/cohorts";
 import { CHART_INTERVALS, type ChartInterval, type OrderflowState } from "@/lib/hooks/use-orderflow";
@@ -70,6 +70,7 @@ export function OrderflowChart({ of, interval, onInterval, liqLevels }: Props) {
   const heatRef = useRef<HeatmapLayer | null>(null);
   const fpRef = useRef<FootprintLayer | null>(null);
   const bubbleRef = useRef<BubbleLayer | null>(null);
+  const profRef = useRef<ProfileLayer | null>(null);
   const linesRef = useRef<IPriceLine[]>([]);
   const dataKeyRef = useRef("");
   const linesKeyRef = useRef("");
@@ -85,8 +86,6 @@ export function OrderflowChart({ of, interval, onInterval, liqLevels }: Props) {
   useEffect(() => {
     try { localStorage.setItem("mako:chart:layers", JSON.stringify(layers)); } catch { /* ignore */ }
   }, [layers]);
-  const [profileBars, setProfileBars] = useState<{ top: number; h: number; w: number; inVa: boolean; poc: boolean }[]>([]);
-  const [scaleW, setScaleW] = useState(60);
 
   const chart = of.chart && of.chart.interval === interval ? of.chart : null;
   const profile: VolumeProfile | null = useMemo(
@@ -149,9 +148,12 @@ export function OrderflowChart({ of, interval, onInterval, liqLevels }: Props) {
     heatRef.current = new HeatmapLayer();
     fpRef.current = new FootprintLayer();
     bubbleRef.current = new BubbleLayer();
+    profRef.current = new ProfileLayer();
+    profRef.current.width = PROFILE_W;
     candleRef.current.attachPrimitive(heatRef.current);
     candleRef.current.attachPrimitive(fpRef.current);
     candleRef.current.attachPrimitive(bubbleRef.current);
+    candleRef.current.attachPrimitive(profRef.current);
     chartRef.current = c;
     return () => {
       c.remove();
@@ -284,34 +286,16 @@ export function OrderflowChart({ of, interval, onInterval, liqLevels }: Props) {
   }, [layers.profile, chart?.candles.length]);
 
   useEffect(() => {
-    if (!layers.profile || !profile) { setProfileBars([]); return; }
-    const draw = () => {
-      const cs = candleRef.current;
-      const c = chartRef.current;
-      if (!cs || !c) return;
-      const maxV = Math.max(...profile.bins.map((b) => b.vol), 1);
-      const bars = profile.bins.map((b) => {
-        const y1 = cs.priceToCoordinate(b.hi);
-        const y2 = cs.priceToCoordinate(b.lo);
-        if (y1 == null || y2 == null) return null;
-        const mid = (b.lo + b.hi) / 2;
-        return {
-          top: Math.min(y1, y2),
-          h: Math.max(1, Math.abs(y2 - y1) - 1),
-          w: (b.vol / maxV) * 100,
-          inVa: mid >= profile.val && mid <= profile.vah,
-          poc: profile.poc >= b.lo && profile.poc <= b.hi,
-        };
-      }).filter((x): x is NonNullable<typeof x> => x !== null);
-      // Clip to the price pane so bars never spill into the delta pane.
-      let paneH = Infinity;
-      try { paneH = c.panes()[0]?.getHeight() ?? Infinity; } catch { /* ignore */ }
-      setProfileBars(bars.filter((b) => b.top >= 0 && b.top + b.h <= paneH));
-      try { setScaleW(c.priceScale("right").width()); } catch { /* ignore */ }
-    };
-    draw();
-    const id = setInterval(draw, 700);
-    return () => clearInterval(id);
+    const p = profRef.current;
+    if (!p) return;
+    p.enabled = layers.profile && !!profile;
+    if (profile) {
+      p.bins = profile.bins;
+      p.poc = profile.poc;
+      p.vah = profile.vah;
+      p.val = profile.val;
+    }
+    p.refresh();
   }, [profile, layers.profile]);
 
   const toggle = (k: keyof Layers) => setLayers((l) => ({ ...l, [k]: !l[k] }));
@@ -355,22 +339,6 @@ export function OrderflowChart({ of, interval, onInterval, liqLevels }: Props) {
       {/* Chart + profile overlay */}
       <div className="relative flex-1 min-h-0">
         <div ref={wrapRef} className="absolute inset-0" />
-        {layers.profile && profileBars.length > 0 && (
-          <div className="absolute top-0 bottom-0 pointer-events-none z-10" style={{ right: scaleW, width: PROFILE_W }}>
-            {profileBars.map((b, i) => (
-              <div
-                key={i}
-                className="absolute right-0"
-                style={{
-                  top: b.top,
-                  height: b.h,
-                  width: `${b.w}%`,
-                  background: b.poc ? "rgba(51,255,163,0.5)" : b.inVa ? "rgba(155,155,160,0.3)" : "rgba(155,155,160,0.14)",
-                }}
-              />
-            ))}
-          </div>
-        )}
         {!chart && (
           <div className="absolute inset-0 flex items-center justify-center text-[12px] text-txt-muted">Loading candles…</div>
         )}

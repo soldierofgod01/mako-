@@ -382,7 +382,7 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
               const usd = px * parseFloat(l.sz);
               if (px > 0 && usd > 0) lv.push([px, usd]);
             }
-            frames.push({ t, tick: fineTick * 10, levels: lv });
+            frames.push({ t, tick: fineTick * 10, levels: lv, coarse: true });
             const cut = Date.now() - HEAT_KEEP_MS;
             while (frames.length && frames[0].t < cut) frames.shift();
           }
@@ -404,6 +404,20 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
       const askUsd = asks.filter((l) => (l.px - mid) / mid <= band).reduce((s, l) => s + l.usd, 0);
       const tot = bidUsd + askUsd;
       lastBookRef.current = { bids: bids.slice(0, 12), asks: asks.slice(0, 12), bandPct: band * 100 };
+
+      // Fine book also feeds the heatmap at full resolution near price.
+      {
+        const t = d.time ?? Date.now();
+        const frames = heatRef.current;
+        let lastFine = -Infinity;
+        for (let i = frames.length - 1; i >= 0 && i >= frames.length - 6; i--) if (!frames[i].coarse) { lastFine = frames[i].t; break; }
+        if (t - lastFine >= 1000 && fine !== null) {
+          const lv: [number, number][] = [...bids, ...asks].filter((l) => l.usd > 0).map((l) => [l.px, l.usd]);
+          frames.push({ t, tick: Math.pow(10, Math.floor(Math.log10(mid)) - fine + 1), levels: lv });
+          const cut = Date.now() - HEAT_KEEP_MS;
+          while (frames.length && frames[0].t < cut) frames.shift();
+        }
+      }
       if (tot <= 0) return;
 
       // Store the latest reading; the 1s engine tick samples it. HL pushes the

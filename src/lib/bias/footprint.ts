@@ -71,16 +71,17 @@ export function imbalanceAt(rows: FootprintCell[], i: number, ratio = 3, minUsd 
 export interface HeatFrame {
   t: number;      // ms
   tick: number;   // price step of this book aggregation
+  coarse?: boolean; // wide, low-res book (fills the edges); fine book draws on top
   levels: [number, number][]; // [price, usd] bids and asks together
 }
 
-/** Robust scale for heat intensity: the 95th percentile of cell sizes. */
-export function heatScale(frames: HeatFrame[]): number {
+/** Robust scale for heat intensity: a high percentile of cell sizes. */
+export function heatScale(frames: HeatFrame[], pct = 0.95): number {
   const vals: number[] = [];
   for (const f of frames) for (const [, u] of f.levels) vals.push(u);
   if (!vals.length) return 1;
   vals.sort((a, b) => a - b);
-  return vals[Math.floor(vals.length * 0.95)] || vals[vals.length - 1] || 1;
+  return vals[Math.min(vals.length - 1, Math.floor(vals.length * pct))] || vals[vals.length - 1] || 1;
 }
 
 /** Heat colour: deep blue → cyan → yellow → white (Bookmap-style), alpha grows with size. */
@@ -101,6 +102,7 @@ export function heatColor(x: number): string {
   const r = Math.round(ar + (br - ar) * f);
   const g = Math.round(ag + (bg - ag) * f);
   const bl = Math.round(ab + (bb - ab) * f);
-  const alpha = 0.18 + 0.72 * Math.sqrt(v);
+  // Most of the book should stay dark; only real walls glow.
+  const alpha = 0.04 + 0.86 * Math.pow(v, 1.3);
   return `rgba(${r},${g},${bl},${alpha.toFixed(3)})`;
 }
