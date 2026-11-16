@@ -76,6 +76,7 @@ export function OrderflowChart({ of, interval, onInterval, liqLevels }: Props) {
   const linesKeyRef = useRef("");
 
   const precRef = useRef(-1);
+  const fpWasOn = useRef<boolean | null>(null);
   const [layers, setLayers] = useState<Layers>(() => {
     const def: Layers = { heatmap: true, footprint: false, bubbles: true, cvd: true, vwap: true, profile: true, liqs: true };
     try {
@@ -134,6 +135,8 @@ export function OrderflowChart({ of, interval, onInterval, liqLevels }: Props) {
     vwapRef.current = c.addSeries(LineSeries, {
       color: "rgba(237,237,239,0.55)", lineWidth: 1, lineStyle: LineStyle.Solid,
       priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, title: "VWAP",
+      // VWAP can sit far from price; don't let it zoom the axis out.
+      autoscaleInfoProvider: () => null,
     });
     deltaRef.current = c.addSeries(HistogramSeries, {
       priceLineVisible: false, lastValueVisible: false,
@@ -237,6 +240,17 @@ export function OrderflowChart({ of, interval, onInterval, liqLevels }: Props) {
 
     bub.enabled = layers.bubbles;
     bub.prints = layers.bubbles ? of.allPrints.filter((p) => p.t >= (times[0] ?? 0)) : [];
+
+    // Toggling footprint on widens bars so numbers fit (user zoom is kept after).
+    if (fpWasOn.current !== layers.footprint) {
+      if (fpWasOn.current !== null || layers.footprint) {
+        try {
+          chartRef.current?.timeScale().applyOptions({ barSpacing: layers.footprint ? 72 : 6 });
+          chartRef.current?.timeScale().scrollToRealTime();
+        } catch { /* ignore */ }
+      }
+      fpWasOn.current = layers.footprint;
+    }
 
     // Footprint replaces candle bodies: fade them so the cells read clearly.
     candleRef.current?.applyOptions(
