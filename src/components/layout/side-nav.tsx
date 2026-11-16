@@ -7,6 +7,7 @@ import {
   ScanSearch,
   Radar,
   Briefcase,
+  BadgeCheck,
   Bell,
   SquareTerminal,
   ChevronLeft,
@@ -19,6 +20,7 @@ const modules = [
   { id: "bias-scanner", label: "Bias Scanner", icon: Radar, color: "text-radar" },
   { id: "terminal", label: "Terminal", icon: SquareTerminal, color: "text-radar" },
   { id: "scanner", label: "Scanner", icon: ScanSearch, color: "text-scanner" },
+  { id: "track", label: "Track record", icon: BadgeCheck, color: "text-radar" },
   { id: "portfolio", label: "Portfolio", icon: Briefcase, color: "text-portfolio" },
   { id: "alerts", label: "Alerts", icon: Bell, color: "text-alerts" },
 ];
