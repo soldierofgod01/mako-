@@ -36,7 +36,7 @@ export default function Home() {
         <SideNav />
         <main className="flex-1 flex flex-col overflow-hidden">
           {activeModule === "bias-scanner" && <BiasScannerModule />}
-          {activeModule === "bias" && <BiasModule />}
+          {activeModule === "terminal" && <BiasModule />}
           {activeModule === "portfolio" && <PortfolioModule />}
           {activeModule === "scanner" && <ScannerModule />}
           {activeModule === "alerts" && <AlertsPlaceholder />}

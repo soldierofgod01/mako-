@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════
-// /api/cohorts?coin=BTC — Sharps vs Donors for one coin (Bias tab).
+// /api/cohorts?coin=BTC — Sharps vs Donors for one coin (Terminal tab).
 // ═══════════════════════════════════════════════════════════════
 
 import { NextResponse } from "next/server";

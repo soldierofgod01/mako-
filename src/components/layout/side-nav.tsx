@@ -8,7 +8,7 @@ import {
   Radar,
   Briefcase,
   Bell,
-  Compass,
+  SquareTerminal,
   ChevronLeft,
   ChevronRight,
   Search,
@@ -17,7 +17,7 @@ import {
 
 const modules = [
   { id: "bias-scanner", label: "Bias Scanner", icon: Radar, color: "text-radar" },
-  { id: "bias", label: "Bias", icon: Compass, color: "text-radar" },
+  { id: "terminal", label: "Terminal", icon: SquareTerminal, color: "text-radar" },
   { id: "scanner", label: "Scanner", icon: ScanSearch, color: "text-scanner" },
   { id: "portfolio", label: "Portfolio", icon: Briefcase, color: "text-portfolio" },
   { id: "alerts", label: "Alerts", icon: Bell, color: "text-alerts" },

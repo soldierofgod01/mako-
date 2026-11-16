@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 
 // ════════════════════════════════════════════════════════════════
 // Bias Scanner — which coins deserve attention right now, by positioning.
-// Click a row → opens that coin in Bias for the live order-flow read.
+// Click a row → opens that coin in the Terminal for the live order-flow read.
 // ════════════════════════════════════════════════════════════════
 
 interface ScanResponse {
@@ -68,7 +68,7 @@ export function BiasScannerModule() {
 
   const open = (coin: string) => {
     setBiasCoin(coin);
-    setActiveModule("bias");
+    setActiveModule("terminal");
   };
 
   const ageMin = data ? Math.max(0, Math.round((Date.now() - data.updatedAt) / 60_000)) : null;
@@ -82,7 +82,7 @@ export function BiasScannerModule() {
             <p className="mt-2 text-[14px] text-txt-secondary leading-[1.5] max-w-[680px]">
               Every liquid Hyperliquid perp, ranked by positioning: what the {data?.tracked.sharps ?? 120} most profitable
               active wallets hold versus the {data?.tracked.donors ?? 120} biggest losers, plus funding crowding. Open a coin
-              to confirm with live order flow.
+              in the Terminal to confirm with live order flow.
             </p>
           </div>
           {ageMin !== null && <span className="ds-label shrink-0">Updated {ageMin === 0 ? "just now" : `${ageMin}m ago`}</span>}
@@ -210,7 +210,7 @@ export function BiasScannerModule() {
 
         <p className="mt-5 text-[12px] text-txt-muted leading-[1.55] max-w-[760px]">
           Positioning only — this scan does not include live order flow (delta, absorption, large prints), which needs a live
-          tape per coin. Use it to shortlist, then confirm in Bias. Cohorts are tracked wallets, not the whole market; past PnL
+          tape per coin. Use it to shortlist, then confirm in the Terminal. Cohorts are tracked wallets, not the whole market; past PnL
           doesn&rsquo;t guarantee future skill. Coins under $500K daily volume are hidden. Not trade calls.
         </p>
         <div className="h-8" />

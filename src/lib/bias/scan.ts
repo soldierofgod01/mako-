@@ -5,7 +5,7 @@
 //   • Funding crowding
 // Live order flow (delta, absorption, prints, book) needs a per-coin tape,
 // so it can't be scanned across 177 coins — the scanner shortlists, the
-// Bias tab confirms with live flow. Reuses the Bias engine's own signal
+// Terminal confirms with live flow. Reuses the Bias engine's own signal
 // functions so the two tabs can never disagree on the same inputs.
 // ════════════════════════════════════════════════════════════════
 

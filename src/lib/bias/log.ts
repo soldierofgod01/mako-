@@ -1,7 +1,7 @@
 // ════════════════════════════════════════════════════════════════
 // Bias log — measures whether the bias is actually right.
 //
-// Every 5 minutes (while the Bias tab is open and warmed up) we record
+// Every 5 minutes (while the Terminal tab is open and warmed up) we record
 // {coin, score, price}. 15 minutes later we check price. A directional
 // call (|score| ≥ 20) is a hit if price moved its way. Neutral reads are
 // not graded. Stored per-browser in localStorage — no backend needed.
