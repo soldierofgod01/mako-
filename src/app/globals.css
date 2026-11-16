@@ -69,8 +69,11 @@
   --color-tier-bronze: #D97706;
 
   /* ─── Type ─── */
-  --font-family-mono: "JetBrains Mono", monospace;
+  --font-family-mono: "Inter", -apple-system, sans-serif; /* UI uses Inter everywhere; see .ds-mono for true mono */
   --font-family-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  /* Tailwind v4 reads --font-sans / --font-mono for the font-sans / font-mono utilities. */
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 
   --font-size-2xs: 11px;
   --font-size-2xs--line-height: 16px;
@@ -208,7 +211,14 @@ body {
 }
 
 /* Numeric — monospace for all numbers */
+/* Numbers: Inter with tabular figures (TradingView-style). Monospace is
+   reserved for grids that must align column-by-column (.ds-mono). */
 .ds-num {
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "cv11" 1;
+}
+.ds-mono {
   font-family: "JetBrains Mono", monospace;
   font-variant-numeric: tabular-nums;
 }
@@ -242,3 +252,14 @@ body {
   font-size: 10px;
   letter-spacing: 0.02em;
 }
+
+/* Terminal side panel: flat sections split by 1px rules (TradingView-style),
+   not stacked cards. */
+.terminal-side .ds-panel {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+  border-radius: 0;
+}
+.terminal-side .ds-panel-signature::before { display: none; }
+.terminal-side .ds-stat-accent::after { display: none; }

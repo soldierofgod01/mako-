@@ -1,12 +1,11 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, Search } from "lucide-react";
+import { BarChart3, Check, ChevronDown, PanelRight, Search } from "lucide-react";
 import { useAppStore } from "@/stores/app-store";
 import { useOrderflow, CHART_INTERVALS, type ChartInterval, type OrderflowState } from "@/lib/hooks/use-orderflow";
-import { OrderflowChart } from "./orderflow-chart";
+import { DEFAULT_INDICATORS, INDICATORS, OrderflowChart, type Indicators } from "./orderflow-chart";
 import { TokenIcon } from "@/components/scanner/token-icon";
-import { CvdChart } from "./cvd-chart";
 import { fmtUsd, WARMUP_MINUTES, type BiasResult, type Signal } from "@/lib/bias/engine";
 import { cn } from "@/lib/utils";
 import type { CohortSide } from "@/lib/cohorts/cohorts";
@@ -45,99 +44,221 @@ export function BiasModule() {
   }, []);
 
   const [interval, setIntervalState] = useState<ChartInterval>("15m");
+  const [indicators, setIndicatorsState] = useState<Indicators>(DEFAULT_INDICATORS);
+  const [panelOpen, setPanelOpen] = useState(true);
   useEffect(() => {
     try {
       const v = localStorage.getItem("mako:chart:interval") as ChartInterval | null;
       if (v && v in CHART_INTERVALS) setIntervalState(v);
+      const ind = localStorage.getItem("mako:chart:indicators:v2");
+      if (ind) setIndicatorsState({ ...DEFAULT_INDICATORS, ...JSON.parse(ind) });
+      if (localStorage.getItem("mako:terminal:panel") === "0") setPanelOpen(false);
     } catch { /* ignore */ }
   }, []);
   const setInterval_ = (i: ChartInterval) => {
     setIntervalState(i);
     try { localStorage.setItem("mako:chart:interval", i); } catch { /* ignore */ }
   };
+  const setIndicators = (f: (i: Indicators) => Indicators) =>
+    setIndicatorsState((prev) => {
+      const next = f(prev);
+      try { localStorage.setItem("mako:chart:indicators:v2", JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  const togglePanel = () =>
+    setPanelOpen((v) => {
+      try { localStorage.setItem("mako:terminal:panel", v ? "0" : "1"); } catch { /* ignore */ }
+      return !v;
+    });
 
   const of = useOrderflow(biasCoin, interval);
   const liqLevels = of.cohorts?.data?.liqLevels ?? [];
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-bg-base">
-      <HeaderBar coin={biasCoin} onPick={setBiasCoin} of={of} />
+      <HeaderBar
+        coin={biasCoin}
+        onPick={setBiasCoin}
+        of={of}
+        interval={interval}
+        onInterval={setInterval_}
+        indicators={indicators}
+        setIndicators={setIndicators}
+        panelOpen={panelOpen}
+        onTogglePanel={togglePanel}
+      />
       <div className="flex-1 flex min-h-0">
-        {/* Left — chart */}
-        <section className="flex-1 min-w-0 border-r border-border bg-[#0A0A0C]">
-          <OrderflowChart key={biasCoin} of={of} interval={interval} onInterval={setInterval_} liqLevels={liqLevels} />
+        <section className="flex-1 min-w-0">
+          <OrderflowChart key={biasCoin} of={of} coin={biasCoin} interval={interval} indicators={indicators} setIndicators={setIndicators} liqLevels={liqLevels} />
         </section>
-        {/* Right — analysis */}
-        <aside className="w-[340px] lg:w-[400px] xl:w-[460px] shrink-0 overflow-y-auto">
-          <div className="p-4 flex flex-col gap-4">
-            <BiasCard bias={of.bias} of={of} />
-            <SignalList bias={of.bias} />
-            <LiqPanel of={of} />
-            <CohortPanel of={of} />
-            <CvdPanel of={of} />
-            <PrintsPanel of={of} />
-            <BookPanel of={of} />
-            <TrackRecord of={of} />
-            <p className="text-[11.5px] text-txt-muted leading-[1.55] px-1 pb-4">
-              Order flow is read live from Hyperliquid from the moment this tab opens — HL has no public
-              historical tape, so delta, prints and OI change build up over the session. Wallet cohorts come from
-              Hyperliquid&rsquo;s public leaderboard; past PnL doesn&rsquo;t guarantee future skill. Weights are a starting
-              point, not back-tested; the track record above is how we find out if they work. A bias is a read on
-              who is in control, not a trade call.
-            </p>
-          </div>
-        </aside>
+        {panelOpen && (
+          <aside className="terminal-side w-[340px] xl:w-[380px] shrink-0 overflow-y-auto border-l border-border bg-bg-base">
+            <div className="flex flex-col">
+              <BiasCard bias={of.bias} of={of} />
+              <SignalList bias={of.bias} />
+              <LiqPanel of={of} />
+              <CohortPanel of={of} />
+              <PrintsPanel of={of} />
+              <BookPanel of={of} />
+              <TrackRecord of={of} />
+              <p className="text-[11px] text-txt-muted leading-[1.55] px-4 py-3">
+                Order flow is read live from Hyperliquid from the moment this tab opens. HL has no public historical tape,
+                so delta, prints, heatmap and OI change build up over the session. Cohorts come from Hyperliquid&rsquo;s public
+                leaderboard; past PnL doesn&rsquo;t guarantee future skill. A bias is a read on who is in control, not a trade call.
+              </p>
+            </div>
+          </aside>
+        )}
       </div>
     </div>
   );
 }
 
-// ─── Header ─────────────────────────────────────────────────────
+// ─── Header (TradingView-style top bar) ─────────────────────────
 
-function HeaderBar({ coin, onPick, of }: { coin: string; onPick: (c: string) => void; of: OrderflowState }) {
+function useFundingCountdown() {
+  const [now, setNow] = useState<number | null>(null);
+  useEffect(() => {
+    setNow(Date.now());
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  if (now == null) return "";
+  // Hyperliquid pays funding every hour, on the hour.
+  const left = 3_600_000 - (now % 3_600_000);
+  const m = Math.floor(left / 60_000);
+  const s = Math.floor((left % 60_000) / 1000);
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+interface HeaderProps {
+  coin: string;
+  onPick: (c: string) => void;
+  of: OrderflowState;
+  interval: ChartInterval;
+  onInterval: (i: ChartInterval) => void;
+  indicators: Indicators;
+  setIndicators: (f: (i: Indicators) => Indicators) => void;
+  panelOpen: boolean;
+  onTogglePanel: () => void;
+}
+
+function HeaderBar({ coin, onPick, of, interval, onInterval, indicators, setIndicators, panelOpen, onTogglePanel }: HeaderProps) {
   const ctx = of.ctx;
   const f8h = ctx ? ctx.fundingHourly * 8 * 100 : null;
+  const countdown = useFundingCountdown();
+  const chg = ctx?.change24hPct ?? 0;
   return (
-    <div className="h-14 shrink-0 border-b border-border flex items-center gap-6 px-4">
+    <div className="h-12 shrink-0 border-b border-border flex items-center gap-3 px-3">
       <CoinPicker coin={coin} onPick={onPick} />
-      <div className="flex items-baseline gap-2.5">
-        <span className="ds-num text-[18px] font-semibold text-txt-primary">{fmtPrice(of.lastPx)}</span>
+      <Divider />
+      <div className="flex items-center gap-0.5">
+        {(Object.keys(CHART_INTERVALS) as ChartInterval[]).map((i) => (
+          <button
+            key={i}
+            onClick={() => onInterval(i)}
+            className={cn(
+              "h-7 px-2 rounded-md text-[12.5px] font-medium ds-num transition-colors",
+              interval === i ? "bg-elevated text-txt-primary" : "text-txt-muted hover:text-txt-primary hover:bg-panel"
+            )}
+          >
+            {i}
+          </button>
+        ))}
+      </div>
+      <Divider />
+      <IndicatorsMenu indicators={indicators} setIndicators={setIndicators} />
+      <Divider />
+      <div className="flex items-baseline gap-2">
+        <span className="ds-num text-[16px] font-semibold text-txt-primary">{fmtPrice(of.lastPx)}</span>
         {ctx && (
-          <span className={cn("ds-num text-[12.5px]", ctx.change24hPct >= 0 ? "text-positive" : "text-negative")}>
-            {ctx.change24hPct >= 0 ? "+" : ""}
-            {ctx.change24hPct.toFixed(2)}%
+          <span className={cn("ds-num text-[12px] font-medium px-1.5 py-0.5 rounded", chg >= 0 ? "text-positive bg-positive/10" : "text-negative bg-negative/10")}>
+            {chg >= 0 ? "+" : ""}{chg.toFixed(2)}%
           </span>
         )}
       </div>
+      <HeaderStat label="24h volume" value={ctx ? fmtUsd(ctx.volume24hUsd).replace("+", "") : "—"} />
       <HeaderStat label="Open interest" value={ctx ? fmtUsd(ctx.oiUsd).replace("+", "") : "—"} />
       <HeaderStat
-        label="Funding / 8h"
-        value={f8h == null ? "—" : `${f8h >= 0 ? "+" : ""}${f8h.toFixed(4)}%`}
+        label="Funding / countdown"
+        value={f8h == null ? "—" : `${f8h >= 0 ? "+" : ""}${(f8h / 8).toFixed(4)}% · ${countdown}`}
         tone={f8h == null ? undefined : f8h > 0.03 ? "neg" : f8h < -0.01 ? "pos" : undefined}
       />
-      <HeaderStat label="24h volume" value={ctx ? fmtUsd(ctx.volume24hUsd).replace("+", "") : "—"} />
-      <div className="ml-auto flex items-center gap-2">
-        <span
-          className={cn(
-            "w-1.5 h-1.5 rounded-full",
-            of.status === "live" ? "bg-accent" : of.status === "connecting" ? "bg-warning animate-pulse" : "bg-negative"
-          )}
-        />
-        <span className="ds-label">
-          {of.status === "live" ? `Live · ${of.tradeCount.toLocaleString()} trades` : of.status === "connecting" ? "Connecting…" : "Feed blocked"}
-        </span>
+      <div className="ml-auto flex items-center gap-3">
+        <div className="hidden md:flex items-center gap-1.5">
+          <span className={cn("w-1.5 h-1.5 rounded-full", of.status === "live" ? "bg-accent" : of.status === "connecting" ? "bg-warning animate-pulse" : "bg-negative")} />
+          <span className="text-[11.5px] text-txt-muted">
+            {of.status === "live" ? "Live" : of.status === "connecting" ? "Connecting" : "Feed blocked"}
+          </span>
+        </div>
+        <button
+          onClick={onTogglePanel}
+          title={panelOpen ? "Hide bias panel" : "Show bias panel"}
+          className={cn("h-7 px-2.5 rounded-md text-[12.5px] font-medium flex items-center gap-1.5 transition-colors", panelOpen ? "bg-elevated text-txt-primary" : "text-txt-muted hover:text-txt-primary hover:bg-panel")}
+        >
+          <PanelRight className="w-3.5 h-3.5" />
+          Bias
+        </button>
       </div>
+    </div>
+  );
+}
+
+const Divider = () => <span className="w-px h-5 bg-border" />;
+
+function IndicatorsMenu({ indicators, setIndicators }: { indicators: Indicators; setIndicators: (f: (i: Indicators) => Indicators) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", esc); };
+  }, [open]);
+  const active = INDICATORS.filter((i) => indicators[i.id] !== "off").length;
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className={cn("h-7 px-2.5 rounded-md text-[12.5px] font-medium flex items-center gap-1.5 transition-colors", open ? "bg-elevated text-txt-primary" : "text-txt-secondary hover:text-txt-primary hover:bg-panel")}
+      >
+        <BarChart3 className="w-3.5 h-3.5" />
+        Indicators
+        {active > 0 && <span className="ds-num text-[11px] text-txt-muted">{active}</span>}
+      </button>
+      {open && (
+        <div className="absolute left-0 top-9 z-50 w-[320px] rounded-lg border border-border-strong bg-elevated shadow-2xl py-1.5">
+          {INDICATORS.map((i) => {
+            const isOn = indicators[i.id] !== "off";
+            return (
+              <button
+                key={i.id}
+                onClick={() => setIndicators((s) => ({ ...s, [i.id]: isOn ? "off" : "on" }))}
+                className="w-full flex items-start gap-3 px-3 py-2 text-left hover:bg-white/[0.04]"
+              >
+                <span className={cn("mt-0.5 w-3.5 h-3.5 rounded-[3px] border flex items-center justify-center shrink-0", isOn ? "bg-accent border-accent" : "border-border-strong")}>
+                  {isOn && <Check className="w-2.5 h-2.5 text-black" strokeWidth={3} />}
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-[12.5px] font-medium text-txt-primary">{i.label}</span>
+                  <span className="block text-[11.5px] text-txt-muted">{i.desc}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
 
 function HeaderStat({ label, value, tone }: { label: string; value: string; tone?: "pos" | "neg" }) {
   return (
-    <div className="hidden lg:flex flex-col leading-tight">
-      <span className="ds-label text-[11px]">{label}</span>
-      <span className={cn("ds-num text-[12.5px]", tone === "pos" ? "text-positive" : tone === "neg" ? "text-negative" : "text-txt-primary")}>
-        {value}
-      </span>
+    <div className="hidden lg:flex flex-col leading-[1.15]">
+      <span className="text-[10.5px] text-txt-muted uppercase tracking-[0.04em]">{label}</span>
+      <span className={cn("ds-num text-[12.5px] font-medium", tone === "pos" ? "text-positive" : tone === "neg" ? "text-negative" : "text-txt-primary")}>{value}</span>
     </div>
   );
 }
@@ -370,30 +491,6 @@ function PullBar({ v }: { v: number }) {
         className={cn("absolute inset-y-0", v >= 0 ? "bg-positive" : "bg-negative")}
         style={v >= 0 ? { left: "50%", width: `${w}%` } : { right: "50%", width: `${w}%` }}
       />
-    </div>
-  );
-}
-
-function CvdPanel({ of }: { of: OrderflowState }) {
-  const last = of.cvd[of.cvd.length - 1];
-  return (
-    <div className="ds-panel">
-      <div className="px-4 pt-4 flex items-baseline justify-between">
-        <span className="ds-section-title">Cumulative delta</span>
-        <span className={cn("ds-num text-[12.5px]", last && last.cvd >= 0 ? "text-positive" : "text-negative")}>
-          {last ? fmtUsd(last.cvd) : "—"}
-        </span>
-      </div>
-      <p className="px-4 mt-1 text-[11.5px] text-txt-muted">
-        Session CVD (mint) vs price (grey). Price rising while CVD falls — or the reverse — is divergence.
-      </p>
-      <div className="h-[180px] px-2 pb-2 mt-2">
-        {of.cvd.length > 1 ? (
-          <CvdChart data={of.cvd} />
-        ) : (
-          <div className="h-full flex items-center justify-center text-[12px] text-txt-muted">Waiting for trades…</div>
-        )}
-      </div>
     </div>
   );
 }

@@ -257,7 +257,7 @@ export class BubbleLayer extends Layer {
     if (!tm || !s || !this.prints.length) return;
     const max = Math.max(...this.prints.map((p) => p.usd), 1);
     target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
-      ctx.font = `600 9px "JetBrains Mono", monospace`;
+      ctx.font = `600 10px Inter, -apple-system, sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       for (const p of this.prints) {

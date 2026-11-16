@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   createChart,
+  createSeriesMarkers,
   CandlestickSeries,
   ColorType,
   CrosshairMode,
@@ -11,37 +12,57 @@ import {
   type IChartApi,
   type IPriceLine,
   type ISeriesApi,
+  type ISeriesMarkersPluginApi,
+  type MouseEventParams,
+  type SeriesMarker,
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
+import { Eye, EyeOff, X } from "lucide-react";
 import { volumeProfile, vwapSeries, type VolumeProfile } from "@/lib/bias/chart-math";
-import { buildFootprint, niceStep } from "@/lib/bias/footprint";
-import { BubbleLayer, FootprintLayer, HeatmapLayer, ProfileLayer } from "./primitives";
 import { fmtUsd } from "@/lib/bias/engine";
+import { buildFootprint, niceStep } from "@/lib/bias/footprint";
 import type { LiqLevel } from "@/lib/cohorts/cohorts";
 import { CHART_INTERVALS, type ChartInterval, type OrderflowState } from "@/lib/hooks/use-orderflow";
+import { BubbleLayer, FootprintLayer, HeatmapLayer, ProfileLayer } from "./primitives";
 import { cn } from "@/lib/utils";
 
 // ════════════════════════════════════════════════════════════════
-// Mako's own order-flow chart. Everything the engine reads, on price:
-//   candles (HL) · daily VWAP · session volume profile (POC / VAH / VAL)
-//   · large prints · liquidation levels of tracked wallets · per-candle delta
+// Mako chart — TradingView-standard presentation.
+//   • Clean default: candles + in-pane volume. Everything else is an
+//     indicator from one menu, listed in the legend with hide / remove.
+//   • Legend top-left: symbol line, live/hover OHLC, one row per indicator.
+//   • Values live on the price axis as pills, not as text across candles.
 // ════════════════════════════════════════════════════════════════
 
 const UP = "#1FB880";
 const DOWN = "#EF4444";
-const MINT = "#33FFA3";
+const UP_VOL = "rgba(31,184,128,0.28)";
+const DOWN_VOL = "rgba(239,68,68,0.28)";
+const AXIS_TEXT = "#8A8A91";
+const FONT = "Inter, -apple-system, BlinkMacSystemFont, sans-serif";
 const PROFILE_W = 90;
 
-export interface Layers {
-  heatmap: boolean;
-  footprint: boolean;
-  bubbles: boolean;
-  cvd: boolean;
-  vwap: boolean;
-  profile: boolean;
-  liqs: boolean;
-}
+export type IndicatorId = "vwap" | "profile" | "heatmap" | "footprint" | "bubbles" | "liqs" | "delta" | "cvd";
+export type IndicatorState = "off" | "on" | "hidden";
+export type Indicators = Record<IndicatorId, IndicatorState>;
+
+export const INDICATORS: { id: IndicatorId; label: string; desc: string }[] = [
+  { id: "vwap", label: "VWAP", desc: "Daily volume-weighted average price" },
+  { id: "profile", label: "Session volume profile", desc: "Today (UTC) · POC and value area" },
+  { id: "heatmap", label: "Order book heatmap", desc: "Resting liquidity over time · live session" },
+  { id: "footprint", label: "Footprint", desc: "Buy × sell volume per price inside each candle" },
+  { id: "bubbles", label: "Large trades", desc: "Big prints at their exact price and time" },
+  { id: "liqs", label: "Liquidation levels", desc: "Where tracked wallets get force-closed" },
+  { id: "delta", label: "Delta", desc: "Net aggressive volume per candle · live session" },
+  { id: "cvd", label: "CVD", desc: "Cumulative volume delta · live session" },
+];
+
+export const DEFAULT_INDICATORS: Indicators = {
+  vwap: "off", profile: "off", heatmap: "off", footprint: "off", bubbles: "off", liqs: "off", delta: "off", cvd: "off",
+};
+
+const on = (s: IndicatorState) => s === "on";
 
 function precisionFor(px: number) {
   if (px >= 1000) return 1;
@@ -50,23 +71,30 @@ function precisionFor(px: number) {
   if (px >= 0.01) return 5;
   return 7;
 }
-
 const ts = (ms: number) => Math.floor(ms / 1000) as UTCTimestamp;
 
 interface Props {
   of: OrderflowState;
+  coin: string;
   interval: ChartInterval;
-  onInterval: (i: ChartInterval) => void;
+  indicators: Indicators;
+  setIndicators: (f: (i: Indicators) => Indicators) => void;
   liqLevels: LiqLevel[];
 }
 
-export function OrderflowChart({ of, interval, onInterval, liqLevels }: Props) {
+interface Hover {
+  o: number; h: number; l: number; c: number; v?: number; t: number;
+}
+
+export function OrderflowChart({ of, coin, interval, indicators, setIndicators, liqLevels }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const volRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const vwapRef = useRef<ISeriesApi<"Line"> | null>(null);
   const deltaRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const cvdRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const hlRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const heatRef = useRef<HeatmapLayer | null>(null);
   const fpRef = useRef<FootprintLayer | null>(null);
   const bubbleRef = useRef<BubbleLayer | null>(null);
@@ -74,24 +102,17 @@ export function OrderflowChart({ of, interval, onInterval, liqLevels }: Props) {
   const linesRef = useRef<IPriceLine[]>([]);
   const dataKeyRef = useRef("");
   const linesKeyRef = useRef("");
-
   const precRef = useRef(-1);
   const fpWasOn = useRef<boolean | null>(null);
-  const [layers, setLayers] = useState<Layers>(() => {
-    const def: Layers = { heatmap: true, footprint: false, bubbles: true, cvd: true, vwap: true, profile: true, liqs: true };
-    try {
-      const saved = typeof window !== "undefined" ? localStorage.getItem("mako:chart:layers") : null;
-      return saved ? { ...def, ...JSON.parse(saved) } : def;
-    } catch { return def; }
-  });
-  useEffect(() => {
-    try { localStorage.setItem("mako:chart:layers", JSON.stringify(layers)); } catch { /* ignore */ }
-  }, [layers]);
+  const [hover, setHover] = useState<Hover | null>(null);
+  const [hoverT, setHoverT] = useState<number | null>(null);
+  const [pane0H, setPane0H] = useState<number | null>(null);
 
   const chart = of.chart && of.chart.interval === interval ? of.chart : null;
+  const showLower = on(indicators.delta) || on(indicators.cvd);
+
   const profile: VolumeProfile | null = useMemo(
     () => (chart ? volumeProfile(chart.profile) : null),
-    // Recompute when the 1m profile data changes, not every tick.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [chart?.profile]
   );
@@ -102,74 +123,118 @@ export function OrderflowChart({ of, interval, onInterval, liqLevels }: Props) {
     const c = createChart(wrapRef.current, {
       autoSize: true,
       layout: {
-        background: { type: ColorType.Solid, color: "#0A0A0C" },
-        textColor: "#6B6B72",
-        fontFamily: "JetBrains Mono, monospace",
-        fontSize: 10,
+        background: { type: ColorType.Solid, color: "#08080A" },
+        textColor: AXIS_TEXT,
+        fontFamily: FONT,
+        fontSize: 11,
         attributionLogo: false,
-        panes: { separatorColor: "rgba(255,255,255,0.06)", enableResize: true },
+        panes: { separatorColor: "rgba(255,255,255,0.08)", separatorHoverColor: "rgba(255,255,255,0.15)", enableResize: true },
       },
-      grid: {
-        vertLines: { color: "rgba(255,255,255,0.025)" },
-        horzLines: { color: "rgba(255,255,255,0.025)" },
+      grid: { vertLines: { visible: false }, horzLines: { visible: false } },
+      crosshair: {
+        mode: CrosshairMode.Normal,
+        vertLine: { color: "rgba(237,237,239,0.35)", width: 1, style: LineStyle.Dashed, labelBackgroundColor: "#26262B" },
+        horzLine: { color: "rgba(237,237,239,0.35)", width: 1, style: LineStyle.Dashed, labelBackgroundColor: "#26262B" },
       },
-      crosshair: { mode: CrosshairMode.Normal },
-      rightPriceScale: { borderVisible: false },
+      rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.08, bottom: 0.08 } },
       timeScale: {
         borderVisible: false,
         timeVisible: true,
         secondsVisible: false,
-        rightOffset: 6,
-        tickMarkFormatter: (t: number) =>
-          new Date(t * 1000).toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit" }),
+        rightOffset: 8,
+        barSpacing: 7,
+        tickMarkFormatter: (t: number) => {
+          const d = new Date(t * 1000);
+          return d.getHours() === 0 && d.getMinutes() === 0
+            ? d.toLocaleDateString([], { day: "numeric", month: "short" })
+            : d.toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit" });
+        },
       },
       localization: {
         timeFormatter: (t: number) =>
-          new Date(t * 1000).toLocaleString([], { hour12: false, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }),
+          new Date(t * 1000).toLocaleString([], { hour12: false, weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }),
       },
     });
     candleRef.current = c.addSeries(CandlestickSeries, {
-      upColor: UP, downColor: DOWN, borderUpColor: UP, borderDownColor: DOWN,
-      wickUpColor: "rgba(31,184,128,0.7)", wickDownColor: "rgba(239,68,68,0.7)",
+      upColor: UP, downColor: DOWN, borderUpColor: UP, borderDownColor: DOWN, wickUpColor: UP, wickDownColor: DOWN,
     });
+    volRef.current = c.addSeries(HistogramSeries, {
+      priceScaleId: "vol", priceFormat: { type: "volume" }, priceLineVisible: false, lastValueVisible: false,
+    });
+    c.priceScale("vol").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 }, visible: false });
     vwapRef.current = c.addSeries(LineSeries, {
-      color: "rgba(237,237,239,0.55)", lineWidth: 1, lineStyle: LineStyle.Solid,
-      priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, title: "VWAP",
-      // VWAP can sit far from price; don't let it zoom the axis out.
+      color: "#E0B341", lineWidth: 1, priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false,
       autoscaleInfoProvider: () => null,
     });
-    deltaRef.current = c.addSeries(HistogramSeries, {
-      priceLineVisible: false, lastValueVisible: false,
-      priceFormat: { type: "custom", formatter: (v: number) => fmtUsd(v), minMove: 1 },
-    }, 1);
-    cvdRef.current = c.addSeries(LineSeries, {
-      color: MINT, lineWidth: 2, priceScaleId: "cvd",
-      priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
-    }, 1);
-    c.panes()[1]?.setStretchFactor(0.22);
-    c.panes()[0]?.setStretchFactor(0.78);
+
     heatRef.current = new HeatmapLayer();
     fpRef.current = new FootprintLayer();
     bubbleRef.current = new BubbleLayer();
     profRef.current = new ProfileLayer();
     profRef.current.width = PROFILE_W;
-    candleRef.current.attachPrimitive(heatRef.current);
-    candleRef.current.attachPrimitive(fpRef.current);
-    candleRef.current.attachPrimitive(bubbleRef.current);
-    candleRef.current.attachPrimitive(profRef.current);
+    for (const l of [heatRef.current, fpRef.current, bubbleRef.current, profRef.current]) {
+      l.enabled = false;
+      candleRef.current.attachPrimitive(l);
+    }
+    hlRef.current = createSeriesMarkers(candleRef.current, []);
+
+    const onMove = (p: MouseEventParams<Time>) => {
+      const cs = candleRef.current;
+      if (!cs || !p.time) { setHover(null); setHoverT(null); return; }
+      const d = p.seriesData.get(cs) as { open: number; high: number; low: number; close: number } | undefined;
+      const v = volRef.current ? (p.seriesData.get(volRef.current) as { value: number } | undefined) : undefined;
+      const tMs = (p.time as number) * 1000;
+      setHoverT(tMs);
+      setHover(d ? { o: d.open, h: d.high, l: d.low, c: d.close, v: v?.value, t: tMs } : null);
+    };
+    c.subscribeCrosshairMove(onMove);
     chartRef.current = c;
+
+    const ph = setInterval(() => {
+      try { setPane0H(c.panes().length > 1 ? c.panes()[0].getHeight() : null); } catch { /* ignore */ }
+    }, 500);
+
     return () => {
+      clearInterval(ph);
+      c.unsubscribeCrosshairMove(onMove);
       c.remove();
       chartRef.current = null;
       candleRef.current = null;
+      deltaRef.current = null;
+      cvdRef.current = null;
       linesRef.current = [];
       dataKeyRef.current = "";
       linesKeyRef.current = "";
       precRef.current = -1;
+      fpWasOn.current = null;
     };
   }, []);
 
-  // ── Candles, VWAP, delta ──
+  // ── Lower pane (delta / CVD): created only when one is on ──
+  useEffect(() => {
+    const c = chartRef.current;
+    if (!c) return;
+    if (showLower && !deltaRef.current) {
+      deltaRef.current = c.addSeries(HistogramSeries, {
+        priceLineVisible: false, lastValueVisible: false,
+        priceFormat: { type: "custom", formatter: (v: number) => fmtUsd(v), minMove: 1 },
+      }, 1);
+      cvdRef.current = c.addSeries(LineSeries, {
+        color: "#EDEDEF", lineWidth: 1, priceScaleId: "cvd", priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+      }, 1);
+      try { c.panes()[1]?.setStretchFactor(0.25); c.panes()[0]?.setStretchFactor(0.75); } catch { /* ignore */ }
+      dataKeyRef.current = "";
+    } else if (!showLower && deltaRef.current) {
+      try {
+        c.removeSeries(deltaRef.current);
+        if (cvdRef.current) c.removeSeries(cvdRef.current);
+      } catch { /* ignore */ }
+      deltaRef.current = null;
+      cvdRef.current = null;
+    }
+  }, [showLower]);
+
+  // ── Candles, volume, VWAP, delta/CVD ──
   useEffect(() => {
     const cs = candleRef.current;
     if (!cs || !chart || !chart.candles.length) return;
@@ -179,45 +244,81 @@ export function OrderflowChart({ of, interval, onInterval, liqLevels }: Props) {
     const p = precisionFor(last.c);
     if (p !== precRef.current) {
       precRef.current = p;
-      cs.applyOptions({ priceFormat: { type: "price", precision: p, minMove: Math.pow(10, -p) } });
-      vwapRef.current?.applyOptions({ priceFormat: { type: "price", precision: p, minMove: Math.pow(10, -p) } });
+      const fmt = { type: "price" as const, precision: p, minMove: Math.pow(10, -p) };
+      cs.applyOptions({ priceFormat: fmt });
+      vwapRef.current?.applyOptions({ priceFormat: fmt });
     }
 
-    const key = `${of.chart?.interval}|${k[0].t}|${k.length}`;
+    const key = `${chart.interval}|${k[0].t}|${k.length}`;
     try {
+      const volBar = (c: typeof last) => ({ time: ts(c.t), value: c.v * c.c, color: c.c >= c.o ? UP_VOL : DOWN_VOL });
       if (key === dataKeyRef.current) {
         cs.update({ time: ts(last.t), open: last.o, high: last.h, low: last.l, close: last.c });
+        volRef.current?.update(volBar(last));
       } else {
         dataKeyRef.current = key;
         cs.setData(k.map((c) => ({ time: ts(c.t), open: c.o, high: c.h, low: c.l, close: c.c })));
+        volRef.current?.setData(k.map(volBar));
       }
-      vwapRef.current?.setData(layers.vwap ? vwapSeries(k).map((x) => ({ time: ts(x.t), value: x.v })) : []);
-      const times = new Set(k.map((c) => c.t));
-      const deltas = chart.delta.filter((d) => times.has(d.t));
-      deltaRef.current?.setData(
-        deltas.map((d) => ({ time: ts(d.t), value: d.net, color: d.net >= 0 ? "rgba(31,184,128,0.75)" : "rgba(239,68,68,0.75)" }))
-      );
-      // Bucketed CVD: running sum of per-candle delta (session).
-      // Candles with no tape (tab was closed) become whitespace, so the line
-      // breaks at the gap instead of drawing a fake straight segment across it.
-      let run = 0;
-      const byT = new Map(deltas.map((d) => [d.t, d.net]));
-      const firstT = deltas[0]?.t ?? Infinity;
-      cvdRef.current?.setData(
-        layers.cvd
-          ? k.filter((c) => c.t >= firstT).map((c) => {
-              const net = byT.get(c.t);
-              return net === undefined ? { time: ts(c.t) } : { time: ts(c.t), value: (run += net) };
-            })
-          : []
-      );
+      vwapRef.current?.setData(on(indicators.vwap) ? vwapSeries(k).map((x) => ({ time: ts(x.t), value: x.v })) : []);
+
+      if (deltaRef.current) {
+        const times = new Set(k.map((c) => c.t));
+        const deltas = chart.delta.filter((d) => times.has(d.t));
+        deltaRef.current.setData(
+          on(indicators.delta)
+            ? deltas.map((d) => ({ time: ts(d.t), value: d.net, color: d.net >= 0 ? "rgba(31,184,128,0.7)" : "rgba(239,68,68,0.7)" }))
+            : []
+        );
+        let run = 0;
+        const byT = new Map(deltas.map((d) => [d.t, d.net]));
+        const firstT = deltas[0]?.t ?? Infinity;
+        cvdRef.current?.setData(
+          on(indicators.cvd)
+            ? k.filter((c) => c.t >= firstT).map((c) => {
+                const net = byT.get(c.t);
+                return net === undefined ? { time: ts(c.t) } : { time: ts(c.t), value: (run += net) };
+              })
+            : []
+        );
+      }
     } catch {
-      /* out-of-order frame — next tick will resync */
       dataKeyRef.current = "";
     }
-  }, [chart, layers.vwap, layers.cvd, of.chart?.interval]);
+  }, [chart, indicators.vwap, indicators.delta, indicators.cvd, showLower]);
 
-  // ── Heatmap / footprint / bubbles (custom layers) ──
+  // ── High / low of the visible range (small labels, no markers drawn) ──
+  useEffect(() => {
+    const c = chartRef.current;
+    const m = hlRef.current;
+    if (!c || !m || !chart) return;
+    const k = chart.candles;
+    const update = () => {
+      try {
+        const r = c.timeScale().getVisibleLogicalRange();
+        if (!r || !k.length) return;
+        const a = Math.max(0, Math.floor(r.from));
+        const b = Math.min(k.length - 1, Math.ceil(r.to));
+        if (b <= a) return;
+        let hi = a, lo = a;
+        for (let i = a; i <= b; i++) {
+          if (k[i].h > k[hi].h) hi = i;
+          if (k[i].l < k[lo].l) lo = i;
+        }
+        const p = precisionFor(k[hi].h);
+        const markers: SeriesMarker<Time>[] = [
+          { time: ts(k[hi].t), position: "aboveBar", shape: "arrowDown", color: "rgba(237,237,239,0.85)", text: k[hi].h.toFixed(p), size: 0 },
+          { time: ts(k[lo].t), position: "belowBar", shape: "arrowUp", color: "rgba(237,237,239,0.85)", text: k[lo].l.toFixed(p), size: 0 },
+        ];
+        m.setMarkers(markers);
+      } catch { /* ignore */ }
+    };
+    update();
+    c.timeScale().subscribeVisibleLogicalRangeChange(update);
+    return () => { try { c.timeScale().unsubscribeVisibleLogicalRangeChange(update); } catch { /* ignore */ } };
+  }, [chart]);
+
+  // ── Custom layers ──
   useEffect(() => {
     const heat = heatRef.current, fp = fpRef.current, bub = bubbleRef.current;
     if (!heat || !fp || !bub || !chart || !of.layers) return;
@@ -225,151 +326,164 @@ export function OrderflowChart({ of, interval, onInterval, liqLevels }: Props) {
     const times = chart.candles.map((c) => c.t);
     for (const l of [heat, fp, bub]) { l.times = times; l.iv = ivMs; }
 
-    heat.enabled = layers.heatmap;
+    heat.enabled = on(indicators.heatmap);
     heat.frames = of.layers.heat;
 
-    fp.enabled = layers.footprint;
-    if (layers.footprint) {
-      // Row size: ~12 rows across a typical recent candle.
-      const recent = chart.candles.slice(-40);
-      const ranges = recent.map((c) => c.h - c.l).filter((x) => x > 0).sort((a, b) => a - b);
+    fp.enabled = on(indicators.footprint);
+    if (fp.enabled) {
+      const ranges = chart.candles.slice(-40).map((c) => c.h - c.l).filter((x) => x > 0).sort((a, b) => a - b);
       const med = ranges[Math.floor(ranges.length / 2)] || (chart.candles[chart.candles.length - 1]?.c ?? 1) * 0.001;
       fp.row = niceStep(med / 12);
       fp.bars = buildFootprint(of.layers.tape, ivMs, fp.row, times[0] ?? 0);
     }
 
-    bub.enabled = layers.bubbles;
-    bub.prints = layers.bubbles ? of.allPrints.filter((p) => p.t >= (times[0] ?? 0)) : [];
+    bub.enabled = on(indicators.bubbles);
+    bub.prints = bub.enabled ? of.allPrints.filter((p) => p.t >= (times[0] ?? 0)) : [];
 
-    // Toggling footprint on widens bars so numbers fit (user zoom is kept after).
-    if (fpWasOn.current !== layers.footprint) {
-      if (fpWasOn.current !== null || layers.footprint) {
+    if (fpWasOn.current !== fp.enabled) {
+      if (fpWasOn.current !== null || fp.enabled) {
         try {
-          chartRef.current?.timeScale().applyOptions({ barSpacing: layers.footprint ? 72 : 6 });
+          chartRef.current?.timeScale().applyOptions({ barSpacing: fp.enabled ? 72 : 7 });
           chartRef.current?.timeScale().scrollToRealTime();
         } catch { /* ignore */ }
       }
-      fpWasOn.current = layers.footprint;
+      fpWasOn.current = fp.enabled;
     }
-
-    // Footprint replaces candle bodies: fade them so the cells read clearly.
     candleRef.current?.applyOptions(
-      layers.footprint
-        ? { upColor: "rgba(31,184,128,0.12)", downColor: "rgba(239,68,68,0.12)", borderUpColor: "rgba(31,184,128,0.35)", borderDownColor: "rgba(239,68,68,0.35)" }
+      fp.enabled
+        ? { upColor: "rgba(31,184,128,0.10)", downColor: "rgba(239,68,68,0.10)", borderUpColor: "rgba(31,184,128,0.35)", borderDownColor: "rgba(239,68,68,0.35)" }
         : { upColor: UP, downColor: DOWN, borderUpColor: UP, borderDownColor: DOWN }
     );
     for (const l of [heat, fp, bub]) l.refresh();
-  }, [chart, of.layers, of.allPrints, interval, layers.heatmap, layers.footprint, layers.bubbles]);
+  }, [chart, of.layers, of.allPrints, interval, indicators.heatmap, indicators.footprint, indicators.bubbles]);
 
-  // ── Price lines: POC / VAH / VAL + liquidation levels ──
+  // ── Profile layer + POC/VA axis pills + liquidation pills ──
   useEffect(() => {
+    const p = profRef.current;
+    if (p) {
+      p.enabled = on(indicators.profile) && !on(indicators.footprint) && !!profile;
+      if (profile) { p.bins = profile.bins; p.poc = profile.poc; p.vah = profile.vah; p.val = profile.val; }
+      p.refresh();
+    }
     const cs = candleRef.current;
     if (!cs) return;
     const px = of.lastPx ?? 0;
-    const liqs = layers.liqs && px > 0
-      ? liqLevels
-          .filter((l) => Math.abs(l.px - px) / px <= 0.15)
-          .sort((a, b) => b.longUsd + b.shortUsd - (a.longUsd + a.shortUsd))
-          .slice(0, 6)
+    const liqs = on(indicators.liqs) && px > 0
+      ? liqLevels.filter((l) => Math.abs(l.px - px) / px <= 0.15).sort((a, b) => b.longUsd + b.shortUsd - (a.longUsd + a.shortUsd)).slice(0, 6)
       : [];
-    const key = JSON.stringify([
-      layers.profile && profile ? [profile.poc, profile.vah, profile.val].map((v) => v.toPrecision(6)) : null,
-      liqs.map((l) => [l.px.toPrecision(6), Math.round((l.longUsd + l.shortUsd) / 1e5)]),
-    ]);
+    const showVa = on(indicators.profile) && profile;
+    const key = JSON.stringify([showVa ? [profile!.poc, profile!.vah, profile!.val].map((v) => v.toPrecision(6)) : null, liqs.map((l) => l.px.toPrecision(6))]);
     if (key === linesKeyRef.current) return;
     linesKeyRef.current = key;
     for (const l of linesRef.current) { try { cs.removePriceLine(l); } catch { /* ignore */ } }
     linesRef.current = [];
-    if (layers.profile && profile) {
-      linesRef.current.push(cs.createPriceLine({ price: profile.poc, color: MINT, lineWidth: 1, lineStyle: LineStyle.Solid, axisLabelVisible: true, title: "POC" }));
-      linesRef.current.push(cs.createPriceLine({ price: profile.vah, color: "rgba(155,155,160,0.6)", lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: "VAH" }));
-      linesRef.current.push(cs.createPriceLine({ price: profile.val, color: "rgba(155,155,160,0.6)", lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: "VAL" }));
+    if (showVa && profile) {
+      linesRef.current.push(cs.createPriceLine({ price: profile.poc, color: "rgba(237,237,239,0.55)", lineWidth: 1, lineStyle: LineStyle.Solid, axisLabelVisible: true, title: "" }));
+      linesRef.current.push(cs.createPriceLine({ price: profile.vah, color: "rgba(237,237,239,0.22)", lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: "" }));
+      linesRef.current.push(cs.createPriceLine({ price: profile.val, color: "rgba(237,237,239,0.22)", lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: "" }));
     }
     for (const l of liqs) {
       const longSide = l.longUsd >= l.shortUsd;
-      const usd = l.longUsd + l.shortUsd;
       linesRef.current.push(cs.createPriceLine({
-        price: l.px,
-        color: longSide ? "rgba(245,158,11,0.75)" : "rgba(96,165,250,0.75)",
-        lineWidth: 1,
-        lineStyle: LineStyle.Dotted,
-        axisLabelVisible: false,
-        title: `${longSide ? "Long" : "Short"} liqs ${fmtUsd(usd).replace("+", "")}`,
+        price: l.px, color: longSide ? "rgba(245,158,11,0.55)" : "rgba(96,165,250,0.55)",
+        lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: "",
       }));
     }
-  }, [profile, liqLevels, of.lastPx, layers.profile, layers.liqs]);
+  }, [profile, liqLevels, of.lastPx, indicators.profile, indicators.liqs, indicators.footprint]);
 
-  // ── Volume profile histogram overlay (DOM, positioned from the price scale) ──
-  // Leave empty space on the right so the profile never covers the latest candles.
-  useEffect(() => {
-    const ts_ = chartRef.current?.timeScale();
-    if (!ts_) return;
-    try {
-      const spacing = ts_.options().barSpacing || 6;
-      ts_.applyOptions({ rightOffset: layers.profile ? Math.ceil(PROFILE_W / spacing) + 2 : 6 });
-    } catch { /* ignore */ }
-  }, [layers.profile, chart?.candles.length]);
+  // ── Legend values (hover, else latest) ──
+  const lastK = chart?.candles[chart.candles.length - 1];
+  const leg = hover ?? (lastK ? { o: lastK.o, h: lastK.h, l: lastK.l, c: lastK.c, v: lastK.v * lastK.c, t: lastK.t } : null);
+  const prec = leg ? precisionFor(leg.c) : 2;
+  const chg = leg ? leg.c - leg.o : 0;
+  const chgPct = leg && leg.o ? (chg / leg.o) * 100 : 0;
+  const tone = chg >= 0 ? "text-positive" : "text-negative";
+  const atT = hoverT ?? lastK?.t ?? null;
+  const deltaAt = atT != null && chart ? chart.delta.find((d) => d.t === atT)?.net : undefined;
+  const vwapNow = chart && on(indicators.vwap) ? vwapSeries(chart.candles).slice(-1)[0]?.v : undefined;
+  const nearLiqs = on(indicators.liqs) && of.lastPx
+    ? liqLevels.filter((l) => Math.abs(l.px - (of.lastPx as number)) / (of.lastPx as number) <= 0.15).length
+    : 0;
+  const heatMins = of.layers?.heat.length ? Math.round((of.layers.heat[of.layers.heat.length - 1].t - of.layers.heat[0].t) / 60000) : 0;
 
-  useEffect(() => {
-    const p = profRef.current;
-    if (!p) return;
-    // In footprint mode each candle has its own POC; the session histogram
-    // would just be giant blocks at that zoom. Keep only its POC/VA lines.
-    p.enabled = layers.profile && !layers.footprint && !!profile;
-    if (profile) {
-      p.bins = profile.bins;
-      p.poc = profile.poc;
-      p.vah = profile.vah;
-      p.val = profile.val;
+  const indValue = (id: IndicatorId): string => {
+    switch (id) {
+      case "vwap": return vwapNow != null ? vwapNow.toFixed(prec) : "";
+      case "profile": return profile ? `POC ${profile.poc.toFixed(prec)}` : "";
+      case "heatmap": return `${heatMins}m recorded`;
+      case "bubbles": return `≥ ${fmtUsd(of.whaleMin).replace("+", "")}`;
+      case "liqs": return `${nearLiqs} within 15%`;
+      case "delta": return deltaAt != null ? fmtUsd(deltaAt) : "—";
+      default: return "";
     }
-    p.refresh();
-  }, [profile, layers.profile, layers.footprint]);
+  };
 
-  const toggle = (k: keyof Layers) => setLayers((l) => ({ ...l, [k]: !l[k] }));
+  const priceInds = INDICATORS.filter((i) => i.id !== "delta" && i.id !== "cvd" && indicators[i.id] !== "off");
+  const lowerInds = INDICATORS.filter((i) => (i.id === "delta" || i.id === "cvd") && indicators[i.id] !== "off");
+
+  const toggleHide = (id: IndicatorId) => setIndicators((s) => ({ ...s, [id]: s[id] === "hidden" ? "on" : "hidden" }));
+  const remove = (id: IndicatorId) => setIndicators((s) => ({ ...s, [id]: "off" }));
 
   return (
-    <div className="w-full h-full flex flex-col">
-      {/* Toolbar */}
-      <div className="h-9 shrink-0 flex items-center gap-1 px-2 border-b border-border overflow-x-auto whitespace-nowrap">
-        {(Object.keys(CHART_INTERVALS) as ChartInterval[]).map((i) => (
-          <button
-            key={i}
-            onClick={() => onInterval(i)}
-            className={cn("h-6 px-2 rounded text-[11.5px] font-medium ds-num", interval === i ? "bg-elevated text-txt-primary" : "text-txt-muted hover:text-txt-primary")}
-          >
-            {i}
-          </button>
-        ))}
-        <span className="w-px h-4 bg-border mx-1.5" />
-        {([
-          ["heatmap", "Heatmap"],
-          ["footprint", "Footprint"],
-          ["bubbles", "Bubbles"],
-          ["cvd", "CVD"],
-          ["vwap", "VWAP"],
-          ["profile", "Profile"],
-          ["liqs", "Liqs"],
-        ] as [keyof Layers, string][]).map(([k, label]) => (
-          <button
-            key={k}
-            onClick={() => toggle(k)}
-            className={cn("h-6 px-2 rounded text-[11.5px] font-medium", layers[k] ? "text-txt-primary bg-elevated/60" : "text-txt-dim hover:text-txt-secondary")}
-          >
-            {label}
-          </button>
-        ))}
-        <span className="ml-auto text-[10.5px] text-txt-muted pr-1 hidden xl:block">
-          Heatmap, footprint, bubbles &amp; delta build from the live session · liqs: tracked wallets
-        </span>
-      </div>
+    <div className="relative w-full h-full">
+      <div ref={wrapRef} className="absolute inset-0" />
 
-      {/* Chart + profile overlay */}
-      <div className="relative flex-1 min-h-0">
-        <div ref={wrapRef} className="absolute inset-0" />
-        {!chart && (
-          <div className="absolute inset-0 flex items-center justify-center text-[12px] text-txt-muted">Loading candles…</div>
+      {/* Legend — price pane */}
+      <div className="absolute left-3 top-2.5 z-20 pointer-events-none select-none">
+        <div className="flex items-center gap-2 text-[12.5px]">
+          <span className="font-semibold text-txt-primary">{coin}-PERP</span>
+          <span className="text-txt-muted">Hyperliquid</span>
+          <span className="text-txt-muted">·</span>
+          <span className="text-txt-secondary">{interval}</span>
+        </div>
+        {leg && (
+          <div className="mt-1 flex items-center gap-2.5 ds-num text-[11.5px]">
+            <span className="text-txt-muted">O <span className={tone}>{leg.o.toFixed(prec)}</span></span>
+            <span className="text-txt-muted">H <span className={tone}>{leg.h.toFixed(prec)}</span></span>
+            <span className="text-txt-muted">L <span className={tone}>{leg.l.toFixed(prec)}</span></span>
+            <span className="text-txt-muted">C <span className={tone}>{leg.c.toFixed(prec)}</span></span>
+            <span className={tone}>{chg >= 0 ? "+" : ""}{chg.toFixed(prec)} ({chgPct >= 0 ? "+" : ""}{chgPct.toFixed(2)}%)</span>
+          </div>
+        )}
+        {leg?.v != null && (
+          <div className="mt-0.5 ds-num text-[11.5px] text-txt-muted">Vol <span className="text-txt-secondary">{fmtUsd(leg.v).replace("+", "")}</span></div>
+        )}
+        {priceInds.length > 0 && (
+          <div className="mt-1.5 flex flex-col gap-0.5">
+            {priceInds.map((i) => (
+              <LegendRow key={i.id} label={i.label} value={indValue(i.id)} hidden={indicators[i.id] === "hidden"} onHide={() => toggleHide(i.id)} onRemove={() => remove(i.id)} />
+            ))}
+          </div>
         )}
       </div>
+
+      {/* Legend — lower pane */}
+      {lowerInds.length > 0 && pane0H != null && (
+        <div className="absolute left-3 z-20 pointer-events-none select-none flex flex-col gap-0.5" style={{ top: pane0H + 6 }}>
+          {lowerInds.map((i) => (
+            <LegendRow key={i.id} label={i.label} value={indValue(i.id)} hidden={indicators[i.id] === "hidden"} onHide={() => toggleHide(i.id)} onRemove={() => remove(i.id)} />
+          ))}
+        </div>
+      )}
+
+      {!chart && <div className="absolute inset-0 flex items-center justify-center text-[12px] text-txt-muted">Loading chart…</div>}
+    </div>
+  );
+}
+
+function LegendRow({ label, value, hidden, onHide, onRemove }: { label: string; value: string; hidden: boolean; onHide: () => void; onRemove: () => void }) {
+  return (
+    <div className="group flex items-center gap-2 h-[18px] text-[11.5px] pointer-events-auto w-fit pr-1 rounded hover:bg-white/[0.04]">
+      <span className={cn(hidden ? "text-txt-dim" : "text-txt-secondary")}>{label}</span>
+      {value && <span className={cn("ds-num", hidden ? "text-txt-dim" : "text-txt-primary")}>{value}</span>}
+      <span className="hidden group-hover:flex items-center gap-1 ml-0.5">
+        <button onClick={onHide} className="text-txt-muted hover:text-txt-primary" title={hidden ? "Show" : "Hide"}>
+          {hidden ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+        </button>
+        <button onClick={onRemove} className="text-txt-muted hover:text-txt-primary" title="Remove">
+          <X className="w-3 h-3" />
+        </button>
+      </span>
     </div>
   );
 }
