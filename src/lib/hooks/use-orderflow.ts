@@ -17,6 +17,9 @@ import { tickLog, logStats, type LogStats } from "@/lib/bias/log";
 import type { CoinCohorts } from "@/lib/cohorts/cohorts";
 import { restore, saveMemory, saveStorage, type CvdPoint, type TapeState } from "@/lib/bias/persist";
 import { candleDelta } from "@/lib/bias/chart-math";
+import type { HeatFrame } from "@/lib/bias/footprint";
+
+const HEAT_KEEP_MS = 45 * 60_000;
 
 export type { CvdPoint };
 export const CHART_INTERVALS = { "1m": 60_000, "5m": 300_000, "15m": 900_000, "1h": 3_600_000, "4h": 14_400_000 } as const;
@@ -88,6 +91,7 @@ export interface OrderflowState {
   cohorts: CohortsResponse | null;
   mtf: { "5m": BiasResult; "15m": BiasResult; "1h": BiasResult } | null;
   restored: { minutes: number; gapSec: number } | null;
+  layers: { heat: HeatFrame[]; tape: Trade[]; tick: number } | null;
   chart: {
     interval: ChartInterval;
     candles: Candle[];
@@ -129,6 +133,7 @@ const EMPTY: OrderflowState = {
   cohorts: null,
   mtf: null,
   restored: null,
+  layers: null,
   chart: null,
 };
 
@@ -153,6 +158,8 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
   const intervalRef = useRef<ChartInterval>(chartInterval);
   const chartCandlesRef = useRef<Candle[]>([]);
   const profileRef = useRef<Candle[]>([]);
+  const heatRef = useRef<HeatFrame[]>([]);
+  const tickRef = useRef(0);
 
   function snapshotTape(): TapeState {
     return {
@@ -163,6 +170,7 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
       cvd: cvdRef.current,
       cvdTotal: cvdTotalRef.current,
       savedAt: Date.now(),
+      heat: heatRef.current,
     };
   }
 
@@ -200,11 +208,19 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
     }
   }
 
+  // Coarser aggregation (10× wider ticks) for the heatmap: same 20 levels
+  // per side, but they reach ~10× further from price.
+  const heatSig = (fine: number) => Math.max(2, fine - 1);
+
   function subscribeBook() {
     if (sigFigsRef.current === null) return;
     send({
       method: "subscribe",
       subscription: { type: "l2Book", coin: coinRef.current, nSigFigs: sigFigsRef.current },
+    });
+    send({
+      method: "subscribe",
+      subscription: { type: "l2Book", coin: coinRef.current, nSigFigs: heatSig(sigFigsRef.current) },
     });
   }
 
@@ -230,6 +246,7 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
       send({ method: "unsubscribe", subscription: { type: "trades", coin: prev } });
       if (prevSig !== null) {
         send({ method: "unsubscribe", subscription: { type: "l2Book", coin: prev, nSigFigs: prevSig } });
+        send({ method: "unsubscribe", subscription: { type: "l2Book", coin: prev, nSigFigs: heatSig(prevSig) } });
       }
     }
     if (prev !== coin && tradesRef.current.length) {
@@ -255,6 +272,7 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
       ctxRef.current = saved.ctx.filter((c) => c.t >= now - CTX_KEEP_MS);
       cvdRef.current = saved.cvd.filter((c) => c.time * 1000 >= cut);
       cvdTotalRef.current = saved.cvdTotal;
+      heatRef.current = (saved.heat ?? []).filter((f) => f.t >= now - HEAT_KEEP_MS);
       const last = tradesRef.current[tradesRef.current.length - 1];
       const first = tradesRef.current[0];
       restoredRef.current = first && last
@@ -268,6 +286,7 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
       ctxRef.current = [];
       cvdRef.current = [];
       cvdTotalRef.current = 0;
+      heatRef.current = [];
       restoredRef.current = null;
       dedupeRef.current = new Set();
     }
@@ -342,6 +361,34 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
       const bestAsk = parseFloat(asksRaw[0].px);
       const mid = (bestBid + bestAsk) / 2;
       if (!(mid > 0)) return;
+
+      // Two book subscriptions share this channel; tell them apart by level spacing.
+      const fine = sigFigsRef.current;
+      if (fine !== null && bidsRaw.length > 1) {
+        // Min gap between adjacent levels = the aggregation tick (gaps only make spacing bigger).
+        let spacing = Infinity;
+        for (let i = 1; i < bidsRaw.length; i++) {
+          const g = Math.abs(parseFloat(bidsRaw[i - 1].px) - parseFloat(bidsRaw[i].px));
+          if (g > 0) spacing = Math.min(spacing, g);
+        }
+        const fineTick = Math.pow(10, Math.floor(Math.log10(mid)) - fine + 1);
+        if (spacing > fineTick * 3) {
+          const t = d.time ?? Date.now();
+          const frames = heatRef.current;
+          if (!frames.length || t - frames[frames.length - 1].t >= 1000) {
+            const lv: [number, number][] = [];
+            for (const l of [...bidsRaw, ...asksRaw]) {
+              const px = parseFloat(l.px);
+              const usd = px * parseFloat(l.sz);
+              if (px > 0 && usd > 0) lv.push([px, usd]);
+            }
+            frames.push({ t, tick: fineTick * 10, levels: lv });
+            const cut = Date.now() - HEAT_KEEP_MS;
+            while (frames.length && frames[0].t < cut) frames.shift();
+          }
+          return; // coarse book feeds the heatmap only
+        }
+      }
 
       const toLv = (l: { px: string; sz: string }) => {
         const px = parseFloat(l.px);
@@ -557,6 +604,7 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
           cohorts: cohortRef.current,
           mtf,
           restored: restoredRef.current,
+          layers: { heat: heatRef.current, tape: trades, tick: ++tickRef.current },
           chart: chartCandles.length
             ? { interval: iv, candles: chartCandles.slice(), profile: profileRef.current, delta }
             : null,

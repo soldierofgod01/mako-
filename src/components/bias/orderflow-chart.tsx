@@ -2,7 +2,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   createChart,
-  createSeriesMarkers,
   CandlestickSeries,
   ColorType,
   CrosshairMode,
@@ -12,12 +11,12 @@ import {
   type IChartApi,
   type IPriceLine,
   type ISeriesApi,
-  type ISeriesMarkersPluginApi,
-  type SeriesMarker,
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
 import { volumeProfile, vwapSeries, type VolumeProfile } from "@/lib/bias/chart-math";
+import { buildFootprint, niceStep } from "@/lib/bias/footprint";
+import { BubbleLayer, FootprintLayer, HeatmapLayer } from "./primitives";
 import { fmtUsd } from "@/lib/bias/engine";
 import type { LiqLevel } from "@/lib/cohorts/cohorts";
 import { CHART_INTERVALS, type ChartInterval, type OrderflowState } from "@/lib/hooks/use-orderflow";
@@ -35,10 +34,13 @@ const MINT = "#33FFA3";
 const PROFILE_W = 90;
 
 export interface Layers {
+  heatmap: boolean;
+  footprint: boolean;
+  bubbles: boolean;
+  cvd: boolean;
   vwap: boolean;
   profile: boolean;
   liqs: boolean;
-  prints: boolean;
 }
 
 function precisionFor(px: number) {
@@ -64,13 +66,25 @@ export function OrderflowChart({ of, interval, onInterval, liqLevels }: Props) {
   const candleRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const vwapRef = useRef<ISeriesApi<"Line"> | null>(null);
   const deltaRef = useRef<ISeriesApi<"Histogram"> | null>(null);
-  const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
+  const cvdRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const heatRef = useRef<HeatmapLayer | null>(null);
+  const fpRef = useRef<FootprintLayer | null>(null);
+  const bubbleRef = useRef<BubbleLayer | null>(null);
   const linesRef = useRef<IPriceLine[]>([]);
   const dataKeyRef = useRef("");
   const linesKeyRef = useRef("");
-  const markersKeyRef = useRef("");
+
   const precRef = useRef(-1);
-  const [layers, setLayers] = useState<Layers>({ vwap: true, profile: true, liqs: true, prints: true });
+  const [layers, setLayers] = useState<Layers>(() => {
+    const def: Layers = { heatmap: true, footprint: false, bubbles: true, cvd: true, vwap: true, profile: true, liqs: true };
+    try {
+      const saved = typeof window !== "undefined" ? localStorage.getItem("mako:chart:layers") : null;
+      return saved ? { ...def, ...JSON.parse(saved) } : def;
+    } catch { return def; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("mako:chart:layers", JSON.stringify(layers)); } catch { /* ignore */ }
+  }, [layers]);
   const [profileBars, setProfileBars] = useState<{ top: number; h: number; w: number; inVa: boolean; poc: boolean }[]>([]);
   const [scaleW, setScaleW] = useState(60);
 
@@ -126,9 +140,18 @@ export function OrderflowChart({ of, interval, onInterval, liqLevels }: Props) {
       priceLineVisible: false, lastValueVisible: false,
       priceFormat: { type: "custom", formatter: (v: number) => fmtUsd(v), minMove: 1 },
     }, 1);
+    cvdRef.current = c.addSeries(LineSeries, {
+      color: MINT, lineWidth: 2, priceScaleId: "cvd",
+      priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+    }, 1);
     c.panes()[1]?.setStretchFactor(0.22);
     c.panes()[0]?.setStretchFactor(0.78);
-    markersRef.current = createSeriesMarkers(candleRef.current, []);
+    heatRef.current = new HeatmapLayer();
+    fpRef.current = new FootprintLayer();
+    bubbleRef.current = new BubbleLayer();
+    candleRef.current.attachPrimitive(heatRef.current);
+    candleRef.current.attachPrimitive(fpRef.current);
+    candleRef.current.attachPrimitive(bubbleRef.current);
     chartRef.current = c;
     return () => {
       c.remove();
@@ -137,7 +160,6 @@ export function OrderflowChart({ of, interval, onInterval, liqLevels }: Props) {
       linesRef.current = [];
       dataKeyRef.current = "";
       linesKeyRef.current = "";
-      markersKeyRef.current = "";
       precRef.current = -1;
     };
   }, []);
@@ -166,48 +188,51 @@ export function OrderflowChart({ of, interval, onInterval, liqLevels }: Props) {
       }
       vwapRef.current?.setData(layers.vwap ? vwapSeries(k).map((x) => ({ time: ts(x.t), value: x.v })) : []);
       const times = new Set(k.map((c) => c.t));
+      const deltas = chart.delta.filter((d) => times.has(d.t));
       deltaRef.current?.setData(
-        chart.delta
-          .filter((d) => times.has(d.t))
-          .map((d) => ({ time: ts(d.t), value: d.net, color: d.net >= 0 ? "rgba(31,184,128,0.75)" : "rgba(239,68,68,0.75)" }))
+        deltas.map((d) => ({ time: ts(d.t), value: d.net, color: d.net >= 0 ? "rgba(31,184,128,0.75)" : "rgba(239,68,68,0.75)" }))
       );
+      // Bucketed CVD: running sum of per-candle delta (session).
+      let run = 0;
+      cvdRef.current?.setData(layers.cvd ? deltas.map((d) => ({ time: ts(d.t), value: (run += d.net) })) : []);
     } catch {
       /* out-of-order frame — next tick will resync */
       dataKeyRef.current = "";
     }
-  }, [chart, layers.vwap, of.chart?.interval]);
+  }, [chart, layers.vwap, layers.cvd, of.chart?.interval]);
 
-  // ── Large prints as markers (aggregated per candle & side) ──
+  // ── Heatmap / footprint / bubbles (custom layers) ──
   useEffect(() => {
-    const m = markersRef.current;
-    if (!m || !chart) return;
-    if (!layers.prints) { if (markersKeyRef.current) { m.setMarkers([]); markersKeyRef.current = ""; } return; }
+    const heat = heatRef.current, fp = fpRef.current, bub = bubbleRef.current;
+    if (!heat || !fp || !bub || !chart || !of.layers) return;
     const ivMs = CHART_INTERVALS[interval];
-    const first = chart.candles[0]?.t ?? 0;
-    const agg = new Map<string, { t: number; side: 1 | -1; usd: number }>();
-    for (const t of of.allPrints) {
-      const b = Math.floor(t.t / ivMs) * ivMs;
-      if (b < first) continue;
-      const k = `${b}|${t.side}`;
-      const e = agg.get(k) ?? { t: b, side: t.side, usd: 0 };
-      e.usd += t.usd;
-      agg.set(k, e);
+    const times = chart.candles.map((c) => c.t);
+    for (const l of [heat, fp, bub]) { l.times = times; l.iv = ivMs; }
+
+    heat.enabled = layers.heatmap;
+    heat.frames = of.layers.heat;
+
+    fp.enabled = layers.footprint;
+    if (layers.footprint) {
+      // Row size: ~12 rows across a typical recent candle.
+      const recent = chart.candles.slice(-40);
+      const ranges = recent.map((c) => c.h - c.l).filter((x) => x > 0).sort((a, b) => a - b);
+      const med = ranges[Math.floor(ranges.length / 2)] || (chart.candles[chart.candles.length - 1]?.c ?? 1) * 0.001;
+      fp.row = niceStep(med / 12);
+      fp.bars = buildFootprint(of.layers.tape, ivMs, fp.row, times[0] ?? 0);
     }
-    const list = [...agg.values()].sort((a, b) => a.t - b.t).slice(-60);
-    const key = list.map((x) => `${x.t}${x.side}${Math.round(x.usd / 1000)}`).join(",");
-    if (key === markersKeyRef.current) return;
-    markersKeyRef.current = key;
-    const max = Math.max(...list.map((x) => x.usd), 1);
-    const markers: SeriesMarker<Time>[] = list.map((x) => ({
-      time: ts(x.t),
-      position: x.side === 1 ? "belowBar" : "aboveBar",
-      shape: x.side === 1 ? "arrowUp" : "arrowDown",
-      color: x.side === 1 ? UP : DOWN,
-      size: 0.6 + 1.2 * Math.sqrt(x.usd / max),
-      text: fmtUsd(x.usd).replace("+", "").replace("−", ""),
-    }));
-    try { m.setMarkers(markers); } catch { markersKeyRef.current = ""; }
-  }, [chart, of.allPrints, interval, layers.prints]);
+
+    bub.enabled = layers.bubbles;
+    bub.prints = layers.bubbles ? of.allPrints.filter((p) => p.t >= (times[0] ?? 0)) : [];
+
+    // Footprint replaces candle bodies: fade them so the cells read clearly.
+    candleRef.current?.applyOptions(
+      layers.footprint
+        ? { upColor: "rgba(31,184,128,0.12)", downColor: "rgba(239,68,68,0.12)", borderUpColor: "rgba(31,184,128,0.35)", borderDownColor: "rgba(239,68,68,0.35)" }
+        : { upColor: UP, downColor: DOWN, borderUpColor: UP, borderDownColor: DOWN }
+    );
+    for (const l of [heat, fp, bub]) l.refresh();
+  }, [chart, of.layers, of.allPrints, interval, layers.heatmap, layers.footprint, layers.bubbles]);
 
   // ── Price lines: POC / VAH / VAL + liquidation levels ──
   useEffect(() => {
@@ -306,10 +331,13 @@ export function OrderflowChart({ of, interval, onInterval, liqLevels }: Props) {
         ))}
         <span className="w-px h-4 bg-border mx-1.5" />
         {([
+          ["heatmap", "Heatmap"],
+          ["footprint", "Footprint"],
+          ["bubbles", "Bubbles"],
+          ["cvd", "CVD"],
           ["vwap", "VWAP"],
           ["profile", "Profile"],
-          ["liqs", "Liq levels"],
-          ["prints", "Large prints"],
+          ["liqs", "Liqs"],
         ] as [keyof Layers, string][]).map(([k, label]) => (
           <button
             key={k}
@@ -320,7 +348,7 @@ export function OrderflowChart({ of, interval, onInterval, liqLevels }: Props) {
           </button>
         ))}
         <span className="ml-auto text-[10.5px] text-txt-muted pr-1 hidden xl:block">
-          Delta: live tape only · liqs: tracked wallets only · profile: today (UTC), from 1m candles
+          Heatmap, footprint, bubbles &amp; delta build from the live session · liqs: tracked wallets
         </span>
       </div>
 

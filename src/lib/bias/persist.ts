@@ -9,6 +9,7 @@
 // ════════════════════════════════════════════════════════════════
 
 import type { BookSample, CtxSample, Trade } from "@/lib/bias/engine";
+import type { HeatFrame } from "@/lib/bias/footprint";
 
 export interface CvdPoint {
   time: number; // seconds
@@ -24,6 +25,7 @@ export interface TapeState {
   cvd: CvdPoint[];
   cvdTotal: number;
   savedAt: number;
+  heat?: HeatFrame[]; // memory only — too big for localStorage
 }
 
 const KEY = (coin: string) => `mako:tape:v1:${coin}`;
