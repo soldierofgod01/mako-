@@ -313,7 +313,9 @@ export function OrderflowChart({ of, interval, onInterval, liqLevels }: Props) {
   useEffect(() => {
     const p = profRef.current;
     if (!p) return;
-    p.enabled = layers.profile && !!profile;
+    // In footprint mode each candle has its own POC; the session histogram
+    // would just be giant blocks at that zoom. Keep only its POC/VA lines.
+    p.enabled = layers.profile && !layers.footprint && !!profile;
     if (profile) {
       p.bins = profile.bins;
       p.poc = profile.poc;
@@ -321,7 +323,7 @@ export function OrderflowChart({ of, interval, onInterval, liqLevels }: Props) {
       p.val = profile.val;
     }
     p.refresh();
-  }, [profile, layers.profile]);
+  }, [profile, layers.profile, layers.footprint]);
 
   const toggle = (k: keyof Layers) => setLayers((l) => ({ ...l, [k]: !l[k] }));
 
