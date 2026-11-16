@@ -54,7 +54,7 @@ export function BiasModule() {
           <TradingViewChart symbol={biasCoin} interval="15" />
         </section>
         {/* Right — analysis */}
-        <aside className="w-[420px] xl:w-[460px] shrink-0 overflow-y-auto">
+        <aside className="w-[340px] lg:w-[400px] xl:w-[460px] shrink-0 overflow-y-auto">
           <div className="p-4 flex flex-col gap-4">
             <BiasCard bias={of.bias} of={of} />
             <SignalList bias={of.bias} />

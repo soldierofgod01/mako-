@@ -110,6 +110,7 @@ export function useOrderflow(coin: string): OrderflowState {
   const tradesRef = useRef<Trade[]>([]);
   const bookRef = useRef<BookSample[]>([]);
   const lastBookRef = useRef<OrderflowState["book"]>(null);
+  const lastImbRef = useRef<BookSample | null>(null);
   const ctxRef = useRef<CtxSample[]>([]);
   const candlesRef = useRef<Candle[]>([]);
   const cvdRef = useRef<CvdPoint[]>([]);
@@ -177,6 +178,7 @@ export function useOrderflow(coin: string): OrderflowState {
     tradesRef.current = [];
     bookRef.current = [];
     lastBookRef.current = null;
+    lastImbRef.current = null;
     ctxRef.current = [];
     candlesRef.current = [];
     cvdRef.current = [];
@@ -262,13 +264,10 @@ export function useOrderflow(coin: string): OrderflowState {
       lastBookRef.current = { bids: bids.slice(0, 12), asks: asks.slice(0, 12), bandPct: band * 100 };
       if (tot <= 0) return;
 
-      const now = d.time ?? Date.now();
-      const samples = bookRef.current;
-      // HL pushes the book often; one sample per second is plenty.
-      if (samples.length && now - samples[samples.length - 1].t < 1000) return;
-      samples.push({ t: now, imbalance: (bidUsd - askUsd) / tot, bidUsd, askUsd });
-      const cut = Date.now() - BOOK_KEEP_MS;
-      while (samples.length && samples[0].t < cut) samples.shift();
+      // Store the latest reading; the 1s engine tick samples it. HL pushes the
+      // aggregated book only every few seconds, so sampling per-message would
+      // under-count — time-based sampling gives a true time-weighted average.
+      lastImbRef.current = { t: d.time ?? Date.now(), imbalance: (bidUsd - askUsd) / tot, bidUsd, askUsd };
     }
 
     function connect() {
@@ -336,6 +335,14 @@ export function useOrderflow(coin: string): OrderflowState {
     const id = setInterval(() => {
       try {
         const now = Date.now();
+        // Sample the latest book reading once per second (skip if stale > 15s).
+        const imb = lastImbRef.current;
+        if (imb && now - imb.t < 15_000) {
+          const samples = bookRef.current;
+          samples.push({ ...imb, t: now });
+          const cut = now - BOOK_KEEP_MS;
+          while (samples.length && samples[0].t < cut) samples.shift();
+        }
         const trades = tradesRef.current;
         const ctx = ctxDataRef.current;
         const vol = ctx?.volume24hUsd ?? 0;
