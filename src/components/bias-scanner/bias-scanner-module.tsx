@@ -60,7 +60,8 @@ export function BiasScannerModule() {
     const out = (data?.rows ?? []).filter((r) => f.match(r) && (!s || r.symbol.includes(s)));
     if (sort === "standouts") {
       // Coins furthest from the sharps' market-wide stance first; unread coins last.
-      out.sort((a, b) => Math.abs(b.relative ?? -999) - Math.abs(a.relative ?? -999));
+      const key = (r: ScanRow) => (r.relative == null ? -1 : Math.abs(r.relative));
+      out.sort((a, b) => key(b) - key(a));
     }
     return out;
   }, [data, filter, q, sort]);

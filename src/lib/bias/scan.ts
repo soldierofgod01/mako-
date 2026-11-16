@@ -53,14 +53,19 @@ export function scanRow(m: ScanMarket, c: CoinCohorts | null | undefined): ScanR
   const hot = f > 0.03;   // longs paying well above HL's 0.01% baseline
   const neg = f < -0.01;  // shorts paying
 
+  // A true divergence needs ≥3 wallets on BOTH sides. With too few donors,
+  // fall back to the sharps' own lean (as the engine does) for tagging only.
+  const hasDiv = !!c && nS >= 3 && nD >= 3;
+  const effDiv = c && nS >= 3 ? (hasDiv ? c.divergence : Math.round(c.sharps.net * 50)) : 0;
+
   const phrases: string[] = [];
   let tag: ScanTag;
-  if (cohort.available && c && c.divergence >= 25) {
+  if (cohort.available && effDiv >= 25) {
     tag = "sharps-long";
-    phrases.push("Sharps longer than donors");
-  } else if (cohort.available && c && c.divergence <= -25) {
+    phrases.push(hasDiv ? "Sharps longer than donors" : "Sharps leaning long");
+  } else if (cohort.available && effDiv <= -25) {
     tag = "sharps-short";
-    phrases.push("Sharps shorter than donors");
+    phrases.push(hasDiv ? "Sharps shorter than donors" : "Sharps leaning short");
   } else if (hot) {
     tag = "crowded-long";
   } else if (neg) {
@@ -78,7 +83,7 @@ export function scanRow(m: ScanMarket, c: CoinCohorts | null | undefined): ScanR
     ...m,
     sharps: c && nS > 0 ? { net: c.sharps.net, n: nS } : null,
     donors: c && nD > 0 ? { net: c.donors.net, n: nD } : null,
-    divergence: c && nS >= 3 ? c.divergence : null,
+    divergence: hasDiv && c ? c.divergence : null,
     relative: null,
     positioning,
     tag,
