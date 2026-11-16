@@ -586,8 +586,10 @@ function MtfRow({ mtf }: { mtf: NonNullable<OrderflowState["mtf"]> }) {
 function LiqPanel({ of }: { of: OrderflowState }) {
   const px = of.lastPx ?? 0;
   const levels = (of.cohorts?.data?.liqLevels ?? []).filter((l) => px > 0 && Math.abs(l.px - px) / px <= 0.25);
-  const above = levels.filter((l) => l.px > px).sort((a, b) => a.px - b.px).slice(0, 3);
-  const below = levels.filter((l) => l.px <= px).sort((a, b) => b.px - a.px).slice(0, 3);
+  // Biggest 3 on each side within 25%, then shown nearest-first.
+  const size = (l: { longUsd: number; shortUsd: number }) => l.longUsd + l.shortUsd;
+  const above = levels.filter((l) => l.px > px).sort((a, b) => size(b) - size(a)).slice(0, 3).sort((a, b) => a.px - b.px);
+  const below = levels.filter((l) => l.px <= px).sort((a, b) => size(b) - size(a)).slice(0, 3).sort((a, b) => b.px - a.px);
   return (
     <div className="ds-panel">
       <div className="px-4 pt-4 flex items-baseline justify-between">

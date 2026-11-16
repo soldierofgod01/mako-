@@ -97,7 +97,9 @@ export interface CoinCohorts {
 }
 
 const LIQ_CLUSTER = 0.003;
-const MAX_LIQ_LEVELS = 10;
+// Keep many: the client picks the biggest ones NEAR price. Keeping only the
+// biggest overall dropped every nearby level (they're smaller, but they matter).
+const MAX_LIQ_LEVELS = 60;
 
 export function clusterLiqs(
   raw: { px: number; usd: number; long: boolean; sharp: boolean }[]

@@ -214,7 +214,10 @@ export function OrderflowChart({ of, interval, onInterval, liqLevels }: Props) {
     if (!cs) return;
     const px = of.lastPx ?? 0;
     const liqs = layers.liqs && px > 0
-      ? liqLevels.filter((l) => Math.abs(l.px - px) / px <= 0.15).slice(0, 6)
+      ? liqLevels
+          .filter((l) => Math.abs(l.px - px) / px <= 0.15)
+          .sort((a, b) => b.longUsd + b.shortUsd - (a.longUsd + a.shortUsd))
+          .slice(0, 6)
       : [];
     const key = JSON.stringify([
       layers.profile && profile ? [profile.poc, profile.vah, profile.val].map((v) => v.toPrecision(6)) : null,
@@ -280,7 +283,7 @@ export function OrderflowChart({ of, interval, onInterval, liqLevels }: Props) {
   return (
     <div className="w-full h-full flex flex-col">
       {/* Toolbar */}
-      <div className="h-9 shrink-0 flex items-center gap-1 px-2 border-b border-border">
+      <div className="h-9 shrink-0 flex items-center gap-1 px-2 border-b border-border overflow-x-auto whitespace-nowrap">
         {(Object.keys(CHART_INTERVALS) as ChartInterval[]).map((i) => (
           <button
             key={i}
@@ -314,7 +317,7 @@ export function OrderflowChart({ of, interval, onInterval, liqLevels }: Props) {
       <div className="relative flex-1 min-h-0">
         <div ref={wrapRef} className="absolute inset-0" />
         {layers.profile && profileBars.length > 0 && (
-          <div className="absolute top-0 bottom-0 pointer-events-none" style={{ right: scaleW, width: 110 }}>
+          <div className="absolute top-0 bottom-0 pointer-events-none z-10" style={{ right: scaleW, width: 110 }}>
             {profileBars.map((b, i) => (
               <div
                 key={i}
@@ -323,7 +326,7 @@ export function OrderflowChart({ of, interval, onInterval, liqLevels }: Props) {
                   top: b.top,
                   height: b.h,
                   width: `${b.w}%`,
-                  background: b.poc ? "rgba(51,255,163,0.45)" : b.inVa ? "rgba(155,155,160,0.22)" : "rgba(155,155,160,0.09)",
+                  background: b.poc ? "rgba(51,255,163,0.5)" : b.inVa ? "rgba(155,155,160,0.3)" : "rgba(155,155,160,0.14)",
                 }}
               />
             ))}
