@@ -32,6 +32,7 @@ import { cn } from "@/lib/utils";
 const UP = "#1FB880";
 const DOWN = "#EF4444";
 const MINT = "#33FFA3";
+const PROFILE_W = 90;
 
 export interface Layers {
   vwap: boolean;
@@ -247,6 +248,16 @@ export function OrderflowChart({ of, interval, onInterval, liqLevels }: Props) {
   }, [profile, liqLevels, of.lastPx, layers.profile, layers.liqs]);
 
   // ── Volume profile histogram overlay (DOM, positioned from the price scale) ──
+  // Leave empty space on the right so the profile never covers the latest candles.
+  useEffect(() => {
+    const ts_ = chartRef.current?.timeScale();
+    if (!ts_) return;
+    try {
+      const spacing = ts_.options().barSpacing || 6;
+      ts_.applyOptions({ rightOffset: layers.profile ? Math.ceil(PROFILE_W / spacing) + 2 : 6 });
+    } catch { /* ignore */ }
+  }, [layers.profile, chart?.candles.length]);
+
   useEffect(() => {
     if (!layers.profile || !profile) { setProfileBars([]); return; }
     const draw = () => {
@@ -317,7 +328,7 @@ export function OrderflowChart({ of, interval, onInterval, liqLevels }: Props) {
       <div className="relative flex-1 min-h-0">
         <div ref={wrapRef} className="absolute inset-0" />
         {layers.profile && profileBars.length > 0 && (
-          <div className="absolute top-0 bottom-0 pointer-events-none z-10" style={{ right: scaleW, width: 110 }}>
+          <div className="absolute top-0 bottom-0 pointer-events-none z-10" style={{ right: scaleW, width: PROFILE_W }}>
             {profileBars.map((b, i) => (
               <div
                 key={i}
