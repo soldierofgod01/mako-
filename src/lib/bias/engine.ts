@@ -355,7 +355,8 @@ export function cohortSignal(c: CoinCohorts | null | undefined, loaded: boolean)
   let raw: number;
   let read: string;
   if (nD >= 3) {
-    raw = clamp(c.divergence / 50);
+    // tanh, not a hard clamp: −62 and −95 must not read identically.
+    raw = Math.tanh(c.divergence / 45);
     const agree = Math.sign(c.sharps.net) === Math.sign(c.donors.net) && Math.abs(c.divergence) < 20;
     read = agree
       ? `Sharps (${lean(sPct)}) and donors (${lean(dPct)}) lean the same way — no edge from who's on which side.`
@@ -364,7 +365,7 @@ export function cohortSignal(c: CoinCohorts | null | undefined, loaded: boolean)
     raw = clamp(c.sharps.net / 0.6) * 0.6; // no donor read — half-strength
     read = `Sharps are ${lean(sPct)}; too few donors hold it to compare.`;
   }
-  let k = Math.min(1, nS / 8);
+  let k = Math.min(1, nS / 8) * (nD >= 5 ? 1 : 0.8);
   if (c.sharps.topShare > 0.6) {
     k *= 0.5;
     read += " One wallet is most of the sharp exposure — treat with caution.";

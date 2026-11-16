@@ -28,6 +28,7 @@ export interface ScanRow extends ScanMarket {
   sharps: { net: number; n: number } | null;
   donors: { net: number; n: number } | null;
   divergence: number | null;
+  relative: number | null; // divergence minus the market-wide baseline
   positioning: number; // [-100, 100]
   tag: ScanTag;
   read: string;
@@ -78,15 +79,41 @@ export function scanRow(m: ScanMarket, c: CoinCohorts | null | undefined): ScanR
     sharps: c && nS > 0 ? { net: c.sharps.net, n: nS } : null,
     donors: c && nD > 0 ? { net: c.donors.net, n: nD } : null,
     divergence: c && nS >= 3 ? c.divergence : null,
+    relative: null,
     positioning,
     tag,
     read,
   };
 }
 
-export function buildScan(markets: ScanMarket[], byCoin: Record<string, CoinCohorts>): ScanRow[] {
-  return markets
+export interface MarketStance {
+  baseline: number | null;  // OI-weighted average divergence across coins
+  sharpsShortShare: number; // share of read coins where sharps are net short
+  coins: number;
+}
+
+/**
+ * If sharps are short almost everything, every coin's divergence mostly
+ * reflects ONE market-wide trade. The coin-specific information is how far
+ * each coin sits from that baseline — that's `relative`.
+ */
+export function marketStance(rows: ScanRow[]): MarketStance {
+  const read = rows.filter((r) => r.divergence !== null && r.sharps);
+  if (read.length < 5) return { baseline: null, sharpsShortShare: 0, coins: read.length };
+  const w = read.reduce((s, r) => s + r.openInterestUsd, 0);
+  const baseline = Math.round(read.reduce((s, r) => s + (r.divergence as number) * r.openInterestUsd, 0) / w);
+  const short = read.filter((r) => (r.sharps as { net: number }).net < 0).length;
+  return { baseline, sharpsShortShare: short / read.length, coins: read.length };
+}
+
+export function buildScan(markets: ScanMarket[], byCoin: Record<string, CoinCohorts>) {
+  const rows = markets
     .filter((m) => m.volume24hUsd >= MIN_SCAN_VOLUME)
-    .map((m) => scanRow(m, byCoin[m.coin]))
-    .sort((a, b) => Math.abs(b.positioning) - Math.abs(a.positioning) || b.volume24hUsd - a.volume24hUsd);
+    .map((m) => scanRow(m, byCoin[m.coin]));
+  const market = marketStance(rows);
+  if (market.baseline !== null) {
+    for (const r of rows) if (r.divergence !== null) r.relative = r.divergence - market.baseline;
+  }
+  rows.sort((a, b) => Math.abs(b.positioning) - Math.abs(a.positioning) || b.volume24hUsd - a.volume24hUsd);
+  return { rows, market };
 }

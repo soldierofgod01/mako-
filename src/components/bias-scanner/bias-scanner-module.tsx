@@ -6,7 +6,7 @@ import { useAppStore } from "@/stores/app-store";
 import { TokenIcon } from "@/components/scanner/token-icon";
 import { fmtPrice } from "@/components/bias/bias-module";
 import { fmtUsd } from "@/lib/bias/engine";
-import type { ScanRow, ScanTag } from "@/lib/bias/scan";
+import type { MarketStance, ScanRow, ScanTag } from "@/lib/bias/scan";
 import { cn } from "@/lib/utils";
 
 // ════════════════════════════════════════════════════════════════
@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 
 interface ScanResponse {
   rows: ScanRow[];
+  market: MarketStance;
   updatedAt: number;
   tracked: { sharps: number; donors: number };
 }
@@ -40,6 +41,7 @@ export function BiasScannerModule() {
   const { setBiasCoin, setActiveModule } = useAppStore();
   const [filter, setFilter] = useState("all");
   const [q, setQ] = useState("");
+  const [sort, setSort] = useState<"strongest" | "standouts">("strongest");
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["bias-scan"],
@@ -55,8 +57,13 @@ export function BiasScannerModule() {
   const rows = useMemo(() => {
     const f = FILTERS.find((x) => x.id === filter) ?? FILTERS[0];
     const s = q.trim().toUpperCase();
-    return (data?.rows ?? []).filter((r) => f.match(r) && (!s || r.symbol.includes(s)));
-  }, [data, filter, q]);
+    const out = (data?.rows ?? []).filter((r) => f.match(r) && (!s || r.symbol.includes(s)));
+    if (sort === "standouts") {
+      // Coins furthest from the sharps' market-wide stance first; unread coins last.
+      out.sort((a, b) => Math.abs(b.relative ?? -999) - Math.abs(a.relative ?? -999));
+    }
+    return out;
+  }, [data, filter, q, sort]);
 
   const open = (coin: string) => {
     setBiasCoin(coin);
@@ -80,6 +87,8 @@ export function BiasScannerModule() {
           {ageMin !== null && <span className="ds-label shrink-0">Updated {ageMin === 0 ? "just now" : `${ageMin}m ago`}</span>}
         </div>
 
+        {data?.market && data.market.baseline !== null && <MarketBanner m={data.market} />}
+
         <div className="flex items-center gap-2 mb-3">
           {FILTERS.map((f) => (
             <button
@@ -93,7 +102,22 @@ export function BiasScannerModule() {
               {f.label}
             </button>
           ))}
-          <div className="ml-auto flex items-center gap-2 h-8 px-2.5 rounded-md border border-border bg-panel w-[200px]">
+          <div className="ml-auto flex items-center rounded-md border border-border p-0.5">
+            {(["strongest", "standouts"] as const).map((k) => (
+              <button
+                key={k}
+                onClick={() => setSort(k)}
+                title={k === "strongest" ? "Biggest absolute positioning" : "Furthest from the sharps' market-wide stance"}
+                className={cn(
+                  "h-7 px-2.5 rounded text-[12px] font-medium",
+                  sort === k ? "bg-elevated text-txt-primary" : "text-txt-muted hover:text-txt-primary"
+                )}
+              >
+                {k === "strongest" ? "Strongest" : "Stand-outs"}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-2 h-8 px-2.5 rounded-md border border-border bg-panel w-[180px]">
             <Search className="w-3.5 h-3.5 text-txt-muted" />
             <input
               value={q}
@@ -105,7 +129,7 @@ export function BiasScannerModule() {
         </div>
 
         <div className="ds-panel ds-panel-signature overflow-hidden">
-          <div className="grid grid-cols-[1.3fr_0.9fr_0.7fr_0.8fr_0.8fr_1fr_1fr_0.8fr_1.1fr_28px] gap-3 px-4 h-10 items-center border-b border-border ds-label text-[11.5px]">
+          <div className="grid grid-cols-[1.3fr_0.9fr_0.7fr_0.8fr_0.8fr_1fr_1fr_0.7fr_0.7fr_1.1fr_28px] gap-3 px-4 h-10 items-center border-b border-border ds-label text-[11.5px]">
             <span>Coin</span>
             <span className="text-right">Price</span>
             <span className="text-right">24h</span>
@@ -114,6 +138,7 @@ export function BiasScannerModule() {
             <span>Sharps</span>
             <span>Donors</span>
             <span className="text-right">Divergence</span>
+            <span className="text-right" title="Divergence minus the sharps' market-wide average">vs mkt</span>
             <span>Positioning</span>
             <span />
           </div>
@@ -132,7 +157,7 @@ export function BiasScannerModule() {
               <button
                 key={r.coin}
                 onClick={() => open(r.coin)}
-                className="w-full grid grid-cols-[1.3fr_0.9fr_0.7fr_0.8fr_0.8fr_1fr_1fr_0.8fr_1.1fr_28px] gap-3 px-4 py-2.5 items-center text-left border-b border-border last:border-b-0 ds-row-hover group"
+                className="w-full grid grid-cols-[1.3fr_0.9fr_0.7fr_0.8fr_0.8fr_1fr_1fr_0.7fr_0.7fr_1.1fr_28px] gap-3 px-4 py-2.5 items-center text-left border-b border-border last:border-b-0 ds-row-hover group"
               >
                 <span className="flex items-center gap-2.5 min-w-0">
                   <TokenIcon symbol={r.symbol} size={22} />
@@ -160,6 +185,14 @@ export function BiasScannerModule() {
                   )}
                 >
                   {r.divergence == null ? "—" : `${r.divergence > 0 ? "+" : ""}${r.divergence}`}
+                </span>
+                <span
+                  className={cn(
+                    "ds-num text-[12px] text-right",
+                    r.relative == null ? "text-txt-muted" : r.relative >= 30 ? "text-positive" : r.relative <= -30 ? "text-negative" : "text-txt-secondary"
+                  )}
+                >
+                  {r.relative == null ? "—" : `${r.relative > 0 ? "+" : ""}${r.relative}`}
                 </span>
                 <span className="flex items-center gap-2">
                   <Bar v={r.positioning / 100} />
@@ -207,6 +240,30 @@ function Bar({ v }: { v: number }) {
         className={cn("absolute inset-y-0", v >= 0 ? "bg-positive" : "bg-negative")}
         style={v >= 0 ? { left: "50%", width: `${w}%` } : { right: "50%", width: `${w}%` }}
       />
+    </div>
+  );
+}
+
+function MarketBanner({ m }: { m: MarketStance }) {
+  const b = m.baseline as number;
+  const share = Math.round(m.sharpsShortShare * 100);
+  const broad = share >= 70 || share <= 30;
+  const stance = b <= -20 ? "net short" : b >= 20 ? "net long" : "mixed";
+  return (
+    <div className="ds-panel ds-stat-accent px-4 py-3 mb-4 flex items-start gap-4">
+      <div className="shrink-0">
+        <div className="ds-label text-[11px]">Market baseline</div>
+        <div className={cn("ds-num text-[20px] font-semibold", b <= -20 ? "text-negative" : b >= 20 ? "text-positive" : "text-txt-primary")}>
+          {b > 0 ? "+" : ""}
+          {b}
+        </div>
+      </div>
+      <p className="text-[12.5px] text-txt-secondary leading-[1.55]">
+        Sharps are {stance} vs donors across the market — net short on {share}% of {m.coins} coins.
+        {broad
+          ? " That's one market-wide stance, so a big divergence on a single coin mostly repeats it. The coin-specific read is the vs mkt column — use Stand-outs to see where sharps break from their own trade."
+          : " Positioning varies coin by coin, so divergence carries coin-specific information."}
+      </p>
     </div>
   );
 }

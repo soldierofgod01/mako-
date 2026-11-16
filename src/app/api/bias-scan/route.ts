@@ -14,9 +14,10 @@ export const maxDuration = 60;
 export async function GET() {
   try {
     const [markets, snap] = await Promise.all([fetchHLPerpMarkets(), getCohortSnapshot()]);
-    const rows = buildScan(markets, snap.byCoin);
+    const { rows, market } = buildScan(markets, snap.byCoin);
     return NextResponse.json({
       rows,
+      market,
       updatedAt: snap.at,
       tracked: { sharps: snap.sharpsOk, donors: snap.donorsOk },
     });
