@@ -2,10 +2,10 @@
 import { SideNav } from "@/components/layout/side-nav";
 import { TickerBar } from "@/components/layout/ticker-bar";
 import { BiasModule } from "@/components/bias/bias-module";
-import { BiasScannerModule } from "@/components/bias-scanner/bias-scanner-module";
+import { ScreenerModule } from "@/components/screener/screener-module";
+import { AnalyticsModule } from "@/components/analytics/analytics-module";
 import { TrackRecordModule } from "@/components/track/track-record-module";
 import { PortfolioModule } from "@/components/portfolio/portfolio-module";
-import { ScannerModule } from "@/components/scanner/scanner-module";
 import { useAppStore } from "@/stores/app-store";
 
 function AlertsPlaceholder() {
@@ -36,11 +36,11 @@ export default function Home() {
       <div className="flex flex-1 overflow-hidden">
         <SideNav />
         <main className="flex-1 flex flex-col overflow-hidden">
-          {activeModule === "bias-scanner" && <BiasScannerModule />}
+          {activeModule === "screener" && <ScreenerModule />}
           {activeModule === "terminal" && <BiasModule />}
+          {activeModule === "analytics" && <AnalyticsModule />}
           {activeModule === "track" && <TrackRecordModule />}
           {activeModule === "portfolio" && <PortfolioModule />}
-          {activeModule === "scanner" && <ScannerModule />}
           {activeModule === "alerts" && <AlertsPlaceholder />}
         </main>
       </div>

@@ -263,7 +263,7 @@ function HeaderStat({ label, value, tone }: { label: string; value: string; tone
   );
 }
 
-function CoinPicker({ coin, onPick }: { coin: string; onPick: (c: string) => void }) {
+export function CoinPicker({ coin, onPick }: { coin: string; onPick: (c: string) => void }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const boxRef = useRef<HTMLDivElement>(null);

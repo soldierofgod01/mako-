@@ -5,11 +5,11 @@ import { cn } from "@/lib/utils";
 import {
   Waves,
   ScanSearch,
-  Radar,
   Briefcase,
   BadgeCheck,
   Bell,
   SquareTerminal,
+  ChartLine,
   ChevronLeft,
   ChevronRight,
   Search,
@@ -17,9 +17,9 @@ import {
 } from "lucide-react";
 
 const modules = [
-  { id: "bias-scanner", label: "Bias Scanner", icon: Radar, color: "text-radar" },
+  { id: "screener", label: "Screener", icon: ScanSearch, color: "text-scanner" },
   { id: "terminal", label: "Terminal", icon: SquareTerminal, color: "text-radar" },
-  { id: "scanner", label: "Scanner", icon: ScanSearch, color: "text-scanner" },
+  { id: "analytics", label: "Analytics", icon: ChartLine, color: "text-radar" },
   { id: "track", label: "Track record", icon: BadgeCheck, color: "text-radar" },
   { id: "portfolio", label: "Portfolio", icon: Briefcase, color: "text-portfolio" },
   { id: "alerts", label: "Alerts", icon: Bell, color: "text-alerts" },

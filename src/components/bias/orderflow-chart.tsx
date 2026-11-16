@@ -136,7 +136,7 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
         vertLine: { color: "rgba(237,237,239,0.35)", width: 1, style: LineStyle.Dashed, labelBackgroundColor: "#26262B" },
         horzLine: { color: "rgba(237,237,239,0.35)", width: 1, style: LineStyle.Dashed, labelBackgroundColor: "#26262B" },
       },
-      rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.08, bottom: 0.08 } },
+      rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.15, bottom: 0.08 } }, // room for the legend
       timeScale: {
         borderVisible: false,
         timeVisible: true,
