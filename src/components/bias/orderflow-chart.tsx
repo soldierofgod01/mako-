@@ -195,8 +195,19 @@ export function OrderflowChart({ of, interval, onInterval, liqLevels }: Props) {
         deltas.map((d) => ({ time: ts(d.t), value: d.net, color: d.net >= 0 ? "rgba(31,184,128,0.75)" : "rgba(239,68,68,0.75)" }))
       );
       // Bucketed CVD: running sum of per-candle delta (session).
+      // Candles with no tape (tab was closed) become whitespace, so the line
+      // breaks at the gap instead of drawing a fake straight segment across it.
       let run = 0;
-      cvdRef.current?.setData(layers.cvd ? deltas.map((d) => ({ time: ts(d.t), value: (run += d.net) })) : []);
+      const byT = new Map(deltas.map((d) => [d.t, d.net]));
+      const firstT = deltas[0]?.t ?? Infinity;
+      cvdRef.current?.setData(
+        layers.cvd
+          ? k.filter((c) => c.t >= firstT).map((c) => {
+              const net = byT.get(c.t);
+              return net === undefined ? { time: ts(c.t) } : { time: ts(c.t), value: (run += net) };
+            })
+          : []
+      );
     } catch {
       /* out-of-order frame — next tick will resync */
       dataKeyRef.current = "";
