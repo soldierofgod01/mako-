@@ -9,6 +9,7 @@ import { TokenIcon } from "@/components/scanner/token-icon";
 import { CvdChart } from "./cvd-chart";
 import { fmtUsd, WARMUP_MINUTES, type BiasResult, type Signal } from "@/lib/bias/engine";
 import { cn } from "@/lib/utils";
+import type { CohortSide } from "@/lib/cohorts/cohorts";
 
 // ════════════════════════════════════════════════════════════════
 // Bias — pick a coin, read its order flow, get a directional bias.
@@ -58,13 +59,15 @@ export function BiasModule() {
           <div className="p-4 flex flex-col gap-4">
             <BiasCard bias={of.bias} of={of} />
             <SignalList bias={of.bias} />
+            <CohortPanel of={of} />
             <CvdPanel of={of} />
             <PrintsPanel of={of} />
             <BookPanel of={of} />
             <TrackRecord of={of} />
             <p className="text-[11.5px] text-txt-muted leading-[1.55] px-1 pb-4">
               Order flow is read live from Hyperliquid from the moment this tab opens — HL has no public
-              historical tape, so delta, prints and OI change build up over the session. Weights are a starting
+              historical tape, so delta, prints and OI change build up over the session. Wallet cohorts come from
+              Hyperliquid&rsquo;s public leaderboard; past PnL doesn&rsquo;t guarantee future skill. Weights are a starting
               point, not back-tested; the track record above is how we find out if they work. A bias is a read on
               who is in control, not a trade call.
             </p>
@@ -456,6 +459,65 @@ function TrackRecord({ of }: { of: OrderflowState }) {
           ? `${s.hits}/${s.graded} directional reads on this coin were right 15 min later${s.graded < 30 ? " — too few to trust yet" : ""}. ${s.pending} pending.`
           : "Logs the bias every 5 min and checks price 15 min later. Needs 30+ graded reads before the number means anything."}
       </p>
+    </div>
+  );
+}
+
+// ─── Sharps vs donors ───────────────────────────────────────────
+
+function CohortPanel({ of }: { of: OrderflowState }) {
+  const c = of.cohorts;
+  const d = c?.data;
+  const div = d?.divergence ?? 0;
+  const ageMin = c ? Math.max(0, Math.round((Date.now() - c.updatedAt) / 60_000)) : 0;
+  return (
+    <div className="ds-panel">
+      <div className="px-4 pt-4 flex items-baseline justify-between">
+        <span className="ds-section-title">Sharps vs donors</span>
+        <span className={cn("ds-num text-[13px] font-medium", div >= 20 ? "text-positive" : div <= -20 ? "text-negative" : "text-txt-secondary")}>
+          {d ? `${div > 0 ? "+" : ""}${div}` : "—"}
+        </span>
+      </div>
+      <p className="px-4 mt-1 text-[11.5px] text-txt-muted leading-[1.5]">
+        Top {c?.tracked.sharps ?? "…"} profitable active wallets vs the {c?.tracked.donors ?? "…"} biggest active losers on
+        Hyperliquid. Positive = winners are longer than losers.
+      </p>
+      {!c ? (
+        <div className="m-4 h-[88px] skeleton" />
+      ) : !d ? (
+        <div className="px-4 py-4 text-[12px] text-txt-muted">No tracked wallets hold this coin right now.</div>
+      ) : (
+        <div className="px-4 pt-3 pb-4 flex flex-col gap-3">
+          <CohortRow label="Sharps" side={d.sharps} />
+          <CohortRow label="Donors" side={d.donors} />
+          <div className="ds-micro">Updated {ageMin === 0 ? "just now" : `${ageMin}m ago`} · tracked wallets only, not the whole market</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CohortRow({ label, side }: { label: string; side: CohortSide }) {
+  const gross = side.longUsd + side.shortUsd;
+  const longPct = gross > 0 ? (side.longUsd / gross) * 100 : 50;
+  const n = side.longWallets + side.shortWallets;
+  return (
+    <div>
+      <div className="flex items-baseline justify-between mb-1.5">
+        <span className="text-[12.5px] font-medium text-txt-primary">
+          {label} <span className="text-txt-muted font-normal">· {n} wallet{n === 1 ? "" : "s"}</span>
+        </span>
+        <span className="ds-num text-[11.5px] text-txt-secondary">
+          {gross > 0 ? `${Math.round(longPct)}% long` : "no positions"}
+        </span>
+      </div>
+      <div className="h-2 rounded-full bg-negative/40 overflow-hidden flex">
+        <div className="h-full bg-positive/80" style={{ width: `${longPct}%` }} />
+      </div>
+      <div className="flex justify-between mt-1 ds-num text-[11px] text-txt-muted">
+        <span>L {fmtUsd(side.longUsd).replace("+", "")} · {side.longWallets}</span>
+        <span>{side.shortWallets} · S {fmtUsd(side.shortUsd).replace("+", "")}</span>
+      </div>
     </div>
   );
 }

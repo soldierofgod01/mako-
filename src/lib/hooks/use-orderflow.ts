@@ -11,6 +11,14 @@ import {
   whaleThreshold,
 } from "@/lib/bias/engine";
 import { tickLog, logStats, type LogStats } from "@/lib/bias/log";
+import type { CoinCohorts } from "@/lib/cohorts/cohorts";
+
+export interface CohortsResponse {
+  coin: string;
+  updatedAt: number;
+  tracked: { sharps: number; donors: number };
+  data: CoinCohorts | null;
+}
 
 // ════════════════════════════════════════════════════════════════
 // useOrderflow(coin) — live order flow for one Hyperliquid perp.
@@ -71,6 +79,7 @@ export interface OrderflowState {
   tradeCount: number;
   logStats: LogStats | null;
   ctxError: boolean;
+  cohorts: CohortsResponse | null;
 }
 
 async function fetchBiasCtx(coin: string): Promise<BiasApiResponse> {
@@ -102,6 +111,7 @@ const EMPTY: OrderflowState = {
   tradeCount: 0,
   logStats: null,
   ctxError: false,
+  cohorts: null,
 };
 
 export function useOrderflow(coin: string): OrderflowState {
@@ -162,6 +172,20 @@ export function useOrderflow(coin: string): OrderflowState {
       subscription: { type: "l2Book", coin: coinRef.current, nSigFigs: sigFigsRef.current },
     });
   }
+
+  // ── Wallet cohorts: slow (server refreshes every 3 min) ──────────
+  const cohortQuery = useQuery({
+    queryKey: ["bias-cohorts", coin],
+    queryFn: async (): Promise<CohortsResponse> => {
+      const res = await fetch(`/api/cohorts?coin=${encodeURIComponent(coin)}`);
+      if (!res.ok) throw new Error("cohorts failed");
+      return res.json();
+    },
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: false,
+  });
+  const cohortRef = useRef<CohortsResponse | null>(null);
+  cohortRef.current = cohortQuery.data && cohortQuery.data.coin === coin ? cohortQuery.data : null;
 
   // ── Reset buffers + (re)subscribe when the coin changes ──────────
   useEffect(() => {
@@ -353,6 +377,8 @@ export function useOrderflow(coin: string): OrderflowState {
           candles: candlesRef.current,
           volume24hUsd: vol,
           now,
+          cohort: cohortRef.current?.data ?? null,
+          cohortLoaded: cohortRef.current !== null,
         });
         const lastPx = trades.length ? trades[trades.length - 1].px : ctx?.markPx ?? null;
         const whaleMin = whaleThreshold(vol);
@@ -375,6 +401,7 @@ export function useOrderflow(coin: string): OrderflowState {
           tradeCount: trades.length,
           logStats: stats,
           ctxError: ctxErrorRef.current,
+          cohorts: cohortRef.current,
         });
       } catch {
         /* never let the engine take the page down */

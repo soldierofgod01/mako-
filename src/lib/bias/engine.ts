@@ -16,6 +16,8 @@
 //     The bias log (see log.ts) exists to measure them on live data.
 // ════════════════════════════════════════════════════════════════
 
+import type { CoinCohorts } from "@/lib/cohorts/cohorts";
+
 export interface Trade {
   t: number;      // ms
   px: number;
@@ -53,6 +55,7 @@ export type SignalId =
   | "book"
   | "oi"
   | "whales"
+  | "cohort"
   | "crowding";
 
 export interface Signal {
@@ -82,12 +85,13 @@ export interface BiasResult {
 
 // ─── Tunables ───────────────────────────────────────────────────
 export const WEIGHTS: Record<SignalId, number> = {
-  delta: 0.25,       // who is aggressing — the core of order flow
-  absorption: 0.2,   // effort vs result — aggression that fails to move price
-  oi: 0.2,           // is new money opening, or positions closing?
-  book: 0.1,         // resting liquidity — spoofable, so low weight
-  whales: 0.15,      // direction of large aggressive prints
-  crowding: 0.1,     // funding extremes — contrarian modifier
+  delta: 0.22,       // who is aggressing — the core of order flow
+  absorption: 0.18,  // effort vs result — aggression that fails to move price
+  oi: 0.18,          // is new money opening, or positions closing?
+  cohort: 0.15,      // best traders vs worst traders — positioning, slower
+  whales: 0.12,      // direction of large aggressive prints
+  crowding: 0.08,    // funding extremes — contrarian modifier
+  book: 0.07,        // resting liquidity — spoofable, so low weight
 };
 
 export const WARMUP_MINUTES = 3;
@@ -331,6 +335,49 @@ export function crowdingSignal(ctx: CtxSample[]): Signal {
   return { ...base, available: true, score, value: `${f8h >= 0 ? "+" : "−"}${Math.abs(f8h).toFixed(4)}% / 8h`, read };
 }
 
+/**
+ * Sharps vs Donors. Positive when the best traders are net longer than the
+ * worst ones. Slow-moving (minutes–hours), so it's context for the flow,
+ * not a trigger. Damped when few wallets hold the coin or one dominates.
+ */
+export function cohortSignal(c: CoinCohorts | null | undefined, loaded: boolean): Signal {
+  const base: Signal = { id: "cohort", label: "Sharps vs donors", weight: WEIGHTS.cohort, available: false, score: 0, value: "—", read: "" };
+  if (!loaded) return { ...base, why: "Loading wallet cohorts…" };
+  const nS = c ? c.sharps.longWallets + c.sharps.shortWallets : 0;
+  const nD = c ? c.donors.longWallets + c.donors.shortWallets : 0;
+  if (!c || nS < 3) {
+    return { ...base, why: `Only ${nS} tracked sharp wallet${nS === 1 ? "" : "s"} hold this coin — too few to read.` };
+  }
+  const sPct = Math.round(c.sharps.net * 100);
+  const dPct = Math.round(c.donors.net * 100);
+  const lean = (p: number) => (p > 10 ? `${p}% net long` : p < -10 ? `${-p}% net short` : "flat");
+
+  let raw: number;
+  let read: string;
+  if (nD >= 3) {
+    raw = clamp(c.divergence / 50);
+    const agree = Math.sign(c.sharps.net) === Math.sign(c.donors.net) && Math.abs(c.divergence) < 20;
+    read = agree
+      ? `Sharps (${lean(sPct)}) and donors (${lean(dPct)}) lean the same way — no edge from who's on which side.`
+      : `Sharps are ${lean(sPct)}, donors are ${lean(dPct)}. ${c.divergence > 0 ? "The winners are longer than the losers." : "The winners are shorter than the losers."}`;
+  } else {
+    raw = clamp(c.sharps.net / 0.6) * 0.6; // no donor read — half-strength
+    read = `Sharps are ${lean(sPct)}; too few donors hold it to compare.`;
+  }
+  let k = Math.min(1, nS / 8);
+  if (c.sharps.topShare > 0.6) {
+    k *= 0.5;
+    read += " One wallet is most of the sharp exposure — treat with caution.";
+  }
+  return {
+    ...base,
+    available: true,
+    score: clamp(raw * k),
+    value: `div ${c.divergence > 0 ? "+" : ""}${c.divergence} · ${nS} sharps · ${nD} donors`,
+    read,
+  };
+}
+
 // ─── Aggregate ──────────────────────────────────────────────────
 
 export interface EngineInput {
@@ -340,14 +387,17 @@ export interface EngineInput {
   candles: Candle[];
   volume24hUsd: number;
   now: number;
+  cohort?: CoinCohorts | null;
+  cohortLoaded?: boolean;
 }
 
 export function computeBias(input: EngineInput): BiasResult {
-  const { trades, book, ctx, candles, volume24hUsd, now } = input;
+  const { trades, book, ctx, candles, volume24hUsd, now, cohort, cohortLoaded = false } = input;
   const signals: Signal[] = [
     deltaSignal(trades, now),
     absorptionSignal(trades, candles, now),
     oiSignal(ctx, now),
+    cohortSignal(cohort, cohortLoaded),
     whaleSignal(trades, now, whaleThreshold(volume24hUsd)),
     bookSignal(book, now),
     crowdingSignal(ctx),
@@ -375,8 +425,10 @@ export function computeBias(input: EngineInput): BiasResult {
   const coverage = totalW > 0 ? availW / totalW : 0;
 
   // Don't let one or two signals produce a full-strength bias: scale by
-  // coverage (sqrt so partial data still counts but is damped).
-  const score = Math.round(clamp(raw * Math.sqrt(coverage)) * 100);
+  // coverage (sqrt so partial data still counts but is damped), and below
+  // 50% coverage damp hard — a lone slow signal must not make a call.
+  const damp = Math.sqrt(coverage) * Math.min(1, coverage / 0.5);
+  const score = Math.round(clamp(raw * damp) * 100);
 
   const direction: BiasResult["direction"] =
     score >= NEUTRAL_BAND ? "long" : score <= -NEUTRAL_BAND ? "short" : "neutral";
