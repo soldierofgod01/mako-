@@ -22,6 +22,12 @@ export interface MarketChange {
   history_minutes: number | null;
 }
 
+export interface ScreenerHistory {
+  coin: string;
+  spark: number[] | null;  // last price per 30-min bucket, oldest → newest (≤24h)
+  vol_1h: number | null;   // stdev of 5-min log returns over the last hour, scaled to 1h, %
+}
+
 export interface ScreenerRow {
   coin: string;
   symbol: string;
@@ -50,6 +56,9 @@ export interface ScreenerRow {
   liqDistPct: number | null; // nearest tracked liquidation cluster, % from price
   liqUsd: number | null;
   liqSide: "long" | "short" | null;
+  spark: number[];          // 24h price path (30-min buckets) + live price
+  vol1h: number | null;     // realised 1h volatility, %
+  oiVolRatio: number | null; // OI ÷ 24h volume — high = positions sticky, low = churn
 }
 
 const pct = (now: number, then: number | null | undefined) =>
@@ -59,12 +68,17 @@ export function buildScreener(
   markets: HLPerpMarket[],
   changes: MarketChange[],
   scan: ScanRow[],
-  liqs: Record<string, LiqLevel[]>
+  liqs: Record<string, LiqLevel[]>,
+  history: ScreenerHistory[] = []
 ): ScreenerRow[] {
   const ch = new Map(changes.map((c) => [c.coin, c]));
+  const hi = new Map(history.map((h) => [h.coin, h]));
   const sc = new Map(scan.map((r) => [r.coin, r]));
   return markets.map((m) => {
     const c = ch.get(m.coin);
+    const h = hi.get(m.coin);
+    const spark = (h?.spark ?? []).filter((x) => x > 0 && isFinite(x));
+    if (spark.length && m.markPrice > 0) spark.push(m.markPrice);
     const s = sc.get(m.coin);
     const oiCoins = m.markPrice > 0 ? m.openInterestUsd / m.markPrice : 0;
     // Nearest liquidation cluster within 25%.
@@ -101,6 +115,9 @@ export function buildScreener(
       liqDistPct: liq ? ((liq.px - m.markPrice) / m.markPrice) * 100 : null,
       liqUsd: liq ? liq.longUsd + liq.shortUsd : null,
       liqSide: liq ? (liq.longUsd >= liq.shortUsd ? "long" : "short") : null,
+      spark,
+      vol1h: h?.vol_1h != null && isFinite(h.vol_1h) ? h.vol_1h : null,
+      oiVolRatio: m.volume24hUsd > 0 ? m.openInterestUsd / m.volume24hUsd : null,
     };
   });
 }

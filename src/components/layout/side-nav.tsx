@@ -5,9 +5,7 @@ import { cn } from "@/lib/utils";
 import {
   Waves,
   ScanSearch,
-  Briefcase,
   BadgeCheck,
-  Bell,
   SquareTerminal,
   ChartLine,
   ChevronLeft,
@@ -21,8 +19,6 @@ const modules = [
   { id: "terminal", label: "Terminal", icon: SquareTerminal, color: "text-radar" },
   { id: "analytics", label: "Analytics", icon: ChartLine, color: "text-radar" },
   { id: "track", label: "Track record", icon: BadgeCheck, color: "text-radar" },
-  { id: "portfolio", label: "Portfolio", icon: Briefcase, color: "text-portfolio" },
-  { id: "alerts", label: "Alerts", icon: Bell, color: "text-alerts" },
 ];
 
 export function SideNav() {

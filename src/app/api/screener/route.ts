@@ -5,23 +5,24 @@ import { fetchHLPerpMarkets } from "@/lib/api/hl-perps";
 import { getCohortSnapshot } from "@/lib/cohorts/server";
 import { buildScan } from "@/lib/bias/scan";
 import { supabaseRpc } from "@/lib/track/supabase";
-import { buildScreener, MIN_VOLUME, type MarketChange } from "@/lib/screener/build";
+import { buildScreener, MIN_VOLUME, type MarketChange, type ScreenerHistory } from "@/lib/screener/build";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function GET() {
   try {
-    const [markets, snap, changes] = await Promise.all([
+    const [markets, snap, changes, history] = await Promise.all([
       fetchHLPerpMarkets(),
       getCohortSnapshot(),
       supabaseRpc<MarketChange[]>("market_changes", {}).catch(() => [] as MarketChange[]),
+      supabaseRpc<ScreenerHistory[]>("screener_history", {}).catch(() => [] as ScreenerHistory[]),
     ]);
     const liquid = markets.filter((m) => m.volume24hUsd >= MIN_VOLUME);
     const { rows: scan, market } = buildScan(liquid, snap.byCoin);
     const liqs: Record<string, NonNullable<(typeof snap.byCoin)[string]>["liqLevels"]> = {};
     for (const [coin, c] of Object.entries(snap.byCoin)) liqs[coin] = c.liqLevels;
-    const rows = buildScreener(liquid, changes, scan, liqs);
+    const rows = buildScreener(liquid, changes, scan, liqs, history);
     const historyMinutes = Math.max(0, ...changes.map((c) => c.history_minutes ?? 0));
     return NextResponse.json({ rows, historyMinutes, market, fetchedAt: Date.now() });
   } catch (err) {

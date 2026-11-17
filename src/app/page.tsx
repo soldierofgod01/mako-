@@ -5,27 +5,7 @@ import { BiasModule } from "@/components/bias/bias-module";
 import { ScreenerModule } from "@/components/screener/screener-module";
 import { AnalyticsModule } from "@/components/analytics/analytics-module";
 import { TrackRecordModule } from "@/components/track/track-record-module";
-import { PortfolioModule } from "@/components/portfolio/portfolio-module";
 import { useAppStore } from "@/stores/app-store";
-
-function AlertsPlaceholder() {
-  return (
-    <div className="flex-1 flex items-center justify-center px-6 py-16">
-      <div className="max-w-[480px] text-center">
-        <div className="w-[58px] h-[58px] bg-[#111] border border-border rounded-[14px] flex items-center justify-center mb-[22px] mx-auto">
-          <span className="text-[24px]">&#128276;</span>
-        </div>
-        <h2 className="text-[24px] font-semibold tracking-[-0.025em] mb-[10px]">
-          Alerts &mdash; coming soon
-        </h2>
-        <p className="text-txt-muted text-[14px] leading-[1.55] mb-2">
-          Price targets, liquidation warnings, plan drift. Delivered to Telegram in real-time.
-        </p>
-        <p className="text-txt-dim text-[12px]">v2 feature</p>
-      </div>
-    </div>
-  );
-}
 
 export default function Home() {
   const { activeModule } = useAppStore();
@@ -40,8 +20,6 @@ export default function Home() {
           {activeModule === "terminal" && <BiasModule />}
           {activeModule === "analytics" && <AnalyticsModule />}
           {activeModule === "track" && <TrackRecordModule />}
-          {activeModule === "portfolio" && <PortfolioModule />}
-          {activeModule === "alerts" && <AlertsPlaceholder />}
         </main>
       </div>
       <TickerBar />
