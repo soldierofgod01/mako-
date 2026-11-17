@@ -3,7 +3,6 @@ import { useState, useEffect } from "react";
 import { useAppStore } from "@/stores/app-store";
 import { cn } from "@/lib/utils";
 import {
-  Waves,
   ScanSearch,
   BadgeCheck,
   SquareTerminal,
@@ -57,9 +56,8 @@ export function SideNav() {
         )}
       >
         <div className="flex items-center gap-2 overflow-hidden">
-          <div className="w-7 h-7 rounded-md bg-radar/15 flex items-center justify-center shrink-0">
-            <Waves className="w-4 h-4 text-radar" />
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element -- tiny static logo, no optimisation needed */}
+          <img src="/mako-star.png" alt="Mako" width={28} height={28} className="w-7 h-7 shrink-0 object-contain" />
           {!collapsed && (
             <div className="flex items-baseline gap-1.5 whitespace-nowrap">
               <span className="font-sans font-bold text-[15px] tracking-tight">MAKO</span>

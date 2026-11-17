@@ -1,6 +1,5 @@
 "use client";
 import { SideNav } from "@/components/layout/side-nav";
-import { TickerBar } from "@/components/layout/ticker-bar";
 import { BiasModule } from "@/components/bias/bias-module";
 import { ScreenerModule } from "@/components/screener/screener-module";
 import { AnalyticsModule } from "@/components/analytics/analytics-module";
@@ -22,7 +21,6 @@ export default function Home() {
           {activeModule === "track" && <TrackRecordModule />}
         </main>
       </div>
-      <TickerBar />
     </div>
   );
 }
