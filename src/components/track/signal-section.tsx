@@ -34,7 +34,6 @@ interface SignalStats {
 const SCREENS: { id: string; label: string; call: string }[] = [
   { id: "squeeze", label: "Squeeze setup", call: "Expects up" },
   { id: "crowded_longs", label: "Crowded longs", call: "Expects down" },
-  { id: "long_squeeze", label: "Long squeeze", call: "Expects down" },
 ];
 const LABEL: Record<string, string> = Object.fromEntries(SCREENS.map((s) => [s.id, s.label]));
 const HZ: Hz[] = ["1h", "4h", "24h"];

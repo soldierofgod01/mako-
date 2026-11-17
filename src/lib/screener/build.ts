@@ -123,7 +123,7 @@ export function buildScreener(
 }
 
 // ─── Preset screens ─────────────────────────────────────────────
-export type PresetId = "all" | "gainers" | "losers" | "oi_building" | "squeeze" | "crowded_longs" | "long_squeeze" | "vol_spike" | "sharps_break";
+export type PresetId = "all" | "gainers" | "losers" | "oi_building" | "squeeze" | "crowded_longs" | "vol_spike" | "sharps_break";
 
 export const PRESETS: { id: PresetId; label: string; hint: string; match: (r: ScreenerRow) => boolean; sort?: { key: keyof ScreenerRow; dir: 1 | -1 } }[] = [
   { id: "all", label: "All", hint: "Every liquid market", match: () => true },
@@ -136,11 +136,6 @@ export const PRESETS: { id: PresetId; label: string; hint: string; match: (r: Sc
     sort: { key: "oiChg4h", dir: -1 },
   },
   { id: "crowded_longs", label: "Crowded longs", hint: "Funding hot and OI still growing", match: (r) => r.funding8h > 0.03 && (r.oiChg4h ?? 0) >= 0, sort: { key: "funding8h", dir: -1 } },
-  {
-    id: "long_squeeze", label: "Long squeeze", hint: "OI rising, price rising, longs paying above-normal funding",
-    match: (r) => (r.oiChg4h ?? 0) > 1 && (r.chg4h ?? 0) > 0 && r.funding8h > 0.01,
-    sort: { key: "oiChg4h", dir: -1 },
-  },
   { id: "vol_spike", label: "Volume spike", hint: "24h volume 2× its average or more", match: (r) => (r.relVol ?? 0) >= 2, sort: { key: "relVol", dir: -1 } },
   { id: "sharps_break", label: "Sharps break", hint: "Sharps far from their own market-wide stance", match: (r) => Math.abs(r.relative ?? 0) >= 40, sort: { key: "relative", dir: -1 } },
 ];

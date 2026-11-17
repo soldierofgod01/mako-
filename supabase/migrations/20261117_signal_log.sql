@@ -1,6 +1,6 @@
 -- ═══════════════════════════════════════════════════════════════
 -- Signal log: every time a coin ENTERS a screen (Squeeze setup, Crowded
--- longs, Long squeeze), record it and grade the forward return at 1h/4h/24h,
+-- longs), record it and grade the forward return at 1h/4h/24h,
 -- raw and in excess of the market (median liquid coin over the same window).
 -- Runs inside market_ingest every 5 min. Events are never pruned
 -- (market_snapshots is pruned at 7d, so grades are persisted on the row).
@@ -9,7 +9,6 @@
 -- 4h history (no 1h/24h fallbacks):
 --   squeeze        dir +1  OI 4h > +1%, price 4h < 0, funding8h < 0
 --   crowded_longs  dir -1  funding8h > 0.03%, OI 4h >= 0
---   long_squeeze   dir -1  OI 4h > +1%, price 4h > 0, funding8h > 0.01% (above HL's neutral rate)
 -- "Enters" = flagged now and not flagged in the previous 60 min (flicker guard).
 -- Context logged for later relative-threshold analysis: funding percentile vs
 -- the coin's own history, OI 4h change z-score vs its own 4h changes.
@@ -69,8 +68,7 @@ begin
   ) x
   cross join lateral (values
     ('squeeze'::text,        1::smallint, x.oi4 > 1  and x.chg4 < 0 and x.f8 < 0),
-    ('crowded_longs'::text, -1::smallint, x.f8 > 0.03 and x.oi4 >= 0),
-    ('long_squeeze'::text,  -1::smallint, x.oi4 > 1  and x.chg4 > 0 and x.f8 > 0.01)
+    ('crowded_longs'::text, -1::smallint, x.f8 > 0.03 and x.oi4 >= 0)
   ) s(signal, dir, hit)
   where s.hit;
 
