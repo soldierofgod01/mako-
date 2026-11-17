@@ -54,8 +54,8 @@ const ALL_INDICATORS: { id: IndicatorId; label: string; desc: string }[] = [
   { id: "footprint", label: "Footprint", desc: "Buy × sell volume per price inside each candle" },
   { id: "bubbles", label: "Large trades", desc: "Big prints at their exact price and time" },
   { id: "liqs", label: "Liquidation levels", desc: "Where tracked wallets get force-closed" },
-  { id: "delta", label: "Delta", desc: "Net aggressive volume per candle · live session" },
-  { id: "cvd", label: "CVD", desc: "Cumulative volume delta · live session" },
+  { id: "delta", label: "Delta", desc: "Net aggressive volume per candle · history on the top 20 coins" },
+  { id: "cvd", label: "CVD", desc: "Cumulative volume delta · history on the top 20 coins" },
 ];
 
 // Parked Nov 2026: browser-only tape/book made these far weaker than dedicated
@@ -420,6 +420,7 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
       case "bubbles": return `≥ ${fmtUsd(of.whaleMin).replace("+", "")}`;
       case "liqs": return `${nearLiqs} within 15%`;
       case "delta": return deltaAt != null ? fmtUsd(deltaAt) : "—";
+      case "cvd": return of.chart?.deltaSource === "live" ? "since tab opened" : "";
       default: return "";
     }
   };

@@ -98,6 +98,8 @@ export interface OrderflowState {
     candles: Candle[];
     profile: Candle[];
     delta: { t: number; net: number }[];
+    /** "recorded" = history from the 24/7 recorder + live tape; "live" = this tab's tape only. */
+    deltaSource: "recorded" | "live";
   } | null;
 }
 
@@ -160,6 +162,7 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
   const chartCandlesRef = useRef<Candle[]>([]);
   const profileRef = useRef<Candle[]>([]);
   const heatRef = useRef<HeatFrame[]>([]);
+  const flowHistRef = useRef<{ coin: string; interval: string; recorded: boolean; bars: Map<number, number> } | null>(null);
   const tickRef = useRef(0);
   const smoothersRef = useRef({ "5m": new BiasSmoother(SMOOTH["5m"]), "15m": new BiasSmoother(SMOOTH["15m"]), "1h": new BiasSmoother(SMOOTH["1h"]) });
 
@@ -520,6 +523,28 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
     profileRef.current = d.profile;
   }, [candleQuery.data]);
 
+  // ── Stored delta history from the 24/7 flow recorder ──
+  const flowQuery = useQuery({
+    queryKey: ["flow-history", coin, chartInterval],
+    queryFn: async (): Promise<{ coin: string; interval: string; recorded: boolean; bars: [number, number, number][] }> => {
+      const res = await fetch(`/api/flow/history?coin=${encodeURIComponent(coin)}&interval=${chartInterval}`);
+      if (!res.ok) throw new Error("flow history failed");
+      return res.json();
+    },
+    refetchInterval: 2 * 60_000,
+    refetchOnWindowFocus: false,
+  });
+  useEffect(() => {
+    const d = flowQuery.data;
+    if (!d) return;
+    flowHistRef.current = {
+      coin: d.coin,
+      interval: d.interval,
+      recorded: d.recorded && d.bars.length > 0,
+      bars: new Map(d.bars.map(([t, buy, sell]) => [t, buy - sell])),
+    };
+  }, [flowQuery.data]);
+
   // Switch candle subscription when the chart interval changes.
   useEffect(() => {
     const prev = intervalRef.current;
@@ -600,7 +625,15 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
         const ivMs = CHART_INTERVALS[iv];
         const chartCandles = chartCandlesRef.current;
         const deltaMap = candleDelta(trades, ivMs);
-        const delta = [...deltaMap.entries()].map(([t, d]) => ({ t, net: d.net })).sort((a, b) => a.t - b.t);
+        // Stored candles before the first one this tab saw in full; live tape after.
+        const hist = flowHistRef.current;
+        const useHist = !!hist && hist.recorded && hist.coin === coinRef.current && hist.interval === iv;
+        const liveStart = trades.length ? Math.ceil(trades[0].t / ivMs) * ivMs : Infinity;
+        const merged = new Map<number, number>();
+        // Recorded buckets fill anything the tab didn't see (incl. gaps in a restored tape).
+        if (useHist) for (const [t, net] of hist.bars) if (t < liveStart || !deltaMap.has(t)) merged.set(t, net);
+        for (const [t, d] of deltaMap) if (!useHist || t >= liveStart || !merged.has(t)) merged.set(t, d.net);
+        const delta = [...merged.entries()].map(([t, net]) => ({ t, net })).sort((a, b) => a.t - b.t);
         const lastPx = trades.length ? trades[trades.length - 1].px : ctx?.markPx ?? null;
         const whaleMin = whaleThreshold(vol);
 
@@ -630,7 +663,7 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
           restored: restoredRef.current,
           layers: { heat: heatRef.current, tape: trades, tick: ++tickRef.current },
           chart: chartCandles.length
-            ? { interval: iv, candles: chartCandles.slice(), profile: profileRef.current, delta }
+            ? { interval: iv, candles: chartCandles.slice(), profile: profileRef.current, delta, deltaSource: useHist ? "recorded" : "live" }
             : null,
         });
       } catch {

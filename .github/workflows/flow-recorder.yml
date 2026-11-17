@@ -29,4 +29,5 @@ jobs:
         env:
           TRACK_TOKEN: ${{ secrets.TRACK_TOKEN }}
           RUN_MINUTES: "340"
-          COINS: "BTC,ETH,SOL,HYPE"
+          # Top ~20 HL perps by volume (Nov 2026). Delta/CVD history and flow grading cover these.
+          COINS: "BTC,ETH,HYPE,SOL,ZEC,XRP,DOGE,LIT,NEAR,XMR,PUMP,VVV,kPEPE,AAVE,UNI,ZRO,XPL,ENA,WLD,ASTER"
