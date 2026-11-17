@@ -86,13 +86,15 @@ export interface BiasResult {
 
 // ─── Tunables ───────────────────────────────────────────────────
 export const WEIGHTS: Record<SignalId, number> = {
-  delta: 0.22,       // who is aggressing — the core of order flow
-  absorption: 0.18,  // effort vs result — aggression that fails to move price
-  oi: 0.18,          // is new money opening, or positions closing?
-  cohort: 0.15,      // best traders vs worst traders — positioning, slower
+  delta: 0.25,       // who is aggressing — the core of order flow
+  absorption: 0.2,   // effort vs result — aggression that fails to move price
+  oi: 0.2,           // is new money opening, or positions closing?
   whales: 0.12,      // direction of large aggressive prints
+  book: 0.1,         // resting liquidity — spoofable, so time-averaged
   crowding: 0.08,    // funding extremes — contrarian modifier
-  book: 0.07,        // resting liquidity — spoofable, so low weight
+  // Sharps vs donors showed no edge in its first 20h of grading (50.7% vs a
+  // 51.9% base rate). Kept as context at 5% until the track record earns more.
+  cohort: 0.05,
 };
 
 export const WARMUP_MINUTES = 3;
@@ -144,6 +146,30 @@ export function deltaStats(trades: Trade[], since: number) {
   return { buy, sell, total, net: buy - sell, ratio: total > 0 ? (buy - sell) / total : 0, n };
 }
 
+/**
+ * Exponentially-weighted aggressive delta: each trade counts with weight
+ * 0.5^(age / halfLife). Old trades fade out instead of falling off the edge
+ * of a hard window, so the read doesn't jump when a big print ages out.
+ */
+export function ewDelta(trades: Trade[], now: number, halfLifeMs: number) {
+  let net = 0;
+  let tot = 0;
+  let n = 0;
+  const horizon = now - halfLifeMs * 6; // beyond 6 half-lives weight < 1.6%
+  for (let i = trades.length - 1; i >= 0; i--) {
+    const tr = trades[i];
+    if (tr.t < horizon) break;
+    const w = Math.pow(0.5, Math.max(0, now - tr.t) / halfLifeMs);
+    net += w * tr.side * tr.usd;
+    tot += w * tr.usd;
+    n++;
+  }
+  return { net, tot, ratio: tot > 0 ? net / tot : 0, n };
+}
+
+/** Smooth 0→1 ramp between a and b (no step edges). */
+export const ramp = (x: number, a: number, b: number) => Math.max(0, Math.min(1, (x - a) / (b - a)));
+
 /** Price at (or just after) a time, from the trade tape. */
 export function priceAt(trades: Trade[], t: number): number | null {
   for (const tr of trades) if (tr.t >= t) return tr.px;
@@ -193,8 +219,10 @@ export function deltaSignal(trades: Trade[], now: number, h: Horizon = H15): Sig
   if (d15.n < 30 || span < h.minTapeMin) {
     return { ...base, why: `Collecting trades — needs ~${h.minTapeMin} min of tape (have ${Math.floor(span)}).` };
   }
-  // Blend: recent 5m matters more, 15m gives persistence.
-  const ratio = 0.6 * d5.ratio + 0.4 * d15.ratio;
+  // Score from exponentially-weighted delta (half-life = half each window);
+  // the hard-window numbers above are only for display.
+  const ew = 0.5 * ewDelta(trades, now, h.shortMs / 2).ratio + 0.5 * ewDelta(trades, now, h.longMs / 2).ratio;
+  const ratio = ew;
   // A 30% net imbalance of aggressive volume is a strong read.
   const score = clamp(ratio / 0.3);
   const who = ratio > 0.05 ? "Buyers are lifting offers" : ratio < -0.05 ? "Sellers are hitting bids" : "Aggression is balanced";
@@ -226,22 +254,21 @@ export function absorptionSignal(trades: Trade[], candles: Candle[], now: number
 
   const ret = Math.log(p1 / p0);
   const z = ret / (vol1m * Math.sqrt(windowMin)); // price move in "expected moves"
-  const effort = d.ratio;
+  const effort = ewDelta(trades, now, (windowMin * MIN) / 2).ratio;
 
-  let score = 0;
+  // Continuous: effort fades in from 6% to 16% net, and the "price failed to
+  // follow" factor ramps smoothly — no on/off thresholds that make it flicker.
+  const followed = sign(z) === sign(effort) ? Math.abs(z) : -Math.abs(z);
+  const effortK = ramp(Math.abs(effort), 0.06, 0.16) * clamp(Math.abs(effort) / 0.3, 0, 1);
+  const failK = ramp(0.35 - followed, 0, 0.85);
+  const score = -sign(effort) * clamp(effortK * failK, 0, 1);
   let read = "Price is responding normally to the aggression — no absorption.";
-  if (Math.abs(effort) >= 0.12) {
-    const followed = sign(z) === sign(effort) ? Math.abs(z) : -Math.abs(z);
-    if (followed < 0.35) {
-      // Aggression failed. Stronger when effort is bigger and price went the other way.
-      const strength = clamp((Math.abs(effort) / 0.3) * (0.35 - followed) / 0.85, 0, 1);
-      score = -sign(effort) * strength;
-      read =
-        effort > 0
-          ? "Buyers are aggressing but price isn't lifting — passive sellers are absorbing. Bearish tell."
-          : "Sellers are aggressing but price isn't dropping — passive buyers are absorbing. Bullish tell.";
-    }
-  } else {
+  if (Math.abs(score) >= 0.1) {
+    read =
+      effort > 0
+        ? "Buyers are aggressing but price isn't lifting — passive sellers are absorbing. Bearish tell."
+        : "Sellers are aggressing but price isn't dropping — passive buyers are absorbing. Bullish tell.";
+  } else if (Math.abs(effort) < 0.06) {
     read = "Aggression too balanced to judge absorption.";
   }
   return {
@@ -314,27 +341,37 @@ export function oiSignal(ctx: CtxSample[], now: number, h: Horizon = H15): Signa
 
 export function whaleSignal(trades: Trade[], now: number, threshold: number, h: Horizon = H15): Signal {
   const base: Signal = { id: "whales", label: "Large prints", weight: WEIGHTS.whales, available: false, score: 0, value: "—", read: "" };
-  const big = trades.filter((t) => t.t >= now - h.longMs && t.usd >= threshold);
-  if (big.length < 3) {
-    return { ...base, why: `Waiting for large prints (≥ ${fmtUsd(threshold).replace("+", "")}) — ${big.length} so far.` };
+  const span = trades.length ? (now - trades[0].t) / 60_000 : 0;
+  if (span < h.minTapeMin) {
+    return { ...base, why: `Watching for large prints (≥ ${fmtUsd(threshold).replace("+", "")}).` };
   }
+  // Recency-weighted, and "no large prints" is a valid neutral read — the
+  // signal no longer switches on/off as prints enter and leave the window.
+  const hl = h.longMs / 2;
   let net = 0;
   let total = 0;
-  for (const t of big) {
-    net += t.side * t.usd;
-    total += t.usd;
+  let count = 0;
+  for (let i = trades.length - 1; i >= 0; i--) {
+    const t = trades[i];
+    if (t.t < now - h.longMs * 2) break;
+    if (t.usd < threshold) continue;
+    const w = Math.pow(0.5, Math.max(0, now - t.t) / hl);
+    net += w * t.side * t.usd;
+    total += w * t.usd;
+    if (t.t >= now - h.longMs) count++;
   }
-  const ratio = net / total;
-  // Shrink toward 0 when there are only a handful of prints.
-  const confidence = Math.min(1, big.length / 8);
+  const ratio = total > 0 ? net / total : 0;
+  // Few prints → shrink smoothly toward 0 (≈full weight from ~8 prints).
+  const confidence = clamp(total / (threshold * 8), 0, 1);
   const score = clamp((ratio / 0.5) * confidence);
   return {
     ...base,
     available: true,
     score,
-    value: `${big.length} prints · net ${fmtUsd(net)}`,
-    read:
-      ratio > 0.2
+    value: count ? `${count} prints · net ${fmtUsd(net)}` : "none",
+    read: count === 0
+      ? "No large prints recently — size is quiet."
+      : ratio > 0.2
         ? "Size is buying aggressively — large players are on the bid."
         : ratio < -0.2
           ? "Size is selling aggressively — large players are on the offer."
@@ -446,14 +483,14 @@ export function computeBias(input: EngineInput, h: Horizon = H15): BiasResult {
   const totalW = signals.reduce((s, x) => s + x.weight, 0);
   const avail = signals.filter((s) => s.available);
   const availW = avail.reduce((s, x) => s + x.weight, 0);
-  const raw = availW > 0 ? avail.reduce((s, x) => s + x.weight * x.score, 0) / availW : 0;
   const coverage = totalW > 0 ? availW / totalW : 0;
 
-  // Don't let one or two signals produce a full-strength bias: scale by
-  // coverage (sqrt so partial data still counts but is damped), and below
-  // 50% coverage damp hard — a lone slow signal must not make a call.
-  const damp = Math.sqrt(coverage) * Math.min(1, coverage / 0.5);
-  const score = Math.round(clamp(raw * damp) * 100);
+  // Missing signals count as 0 over the FULL weight. No re-normalising over
+  // whatever happens to be available — that made the score jump every time a
+  // signal switched on or off. Partial data simply can't reach full strength.
+  const raw = totalW > 0 ? avail.reduce((s, x) => s + x.weight * x.score, 0) / totalW : 0;
+  // Below half coverage, damp further so a lone slow signal can't make a call.
+  const score = Math.round(clamp(raw * Math.min(1, coverage / 0.5)) * 100);
 
   const direction: BiasResult["direction"] =
     score >= NEUTRAL_BAND ? "long" : score <= -NEUTRAL_BAND ? "short" : "neutral";
@@ -485,7 +522,7 @@ export function computeBias(input: EngineInput, h: Horizon = H15): BiasResult {
   };
 }
 
-function buildSummary(direction: BiasResult["direction"], avail: Signal[]): string {
+export function buildSummary(direction: BiasResult["direction"], avail: Signal[]): string {
   const availW = avail.reduce((s, x) => s + x.weight, 0);
   if (avail.length === 0 || availW < 0.5) return "Reading the tape — not enough data for a bias yet.";
   const ranked = [...avail]

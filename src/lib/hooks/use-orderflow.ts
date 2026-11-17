@@ -17,6 +17,7 @@ import { tickLog, logStats, type LogStats } from "@/lib/bias/log";
 import type { CoinCohorts } from "@/lib/cohorts/cohorts";
 import { restore, saveMemory, saveStorage, type CvdPoint, type TapeState } from "@/lib/bias/persist";
 import { candleDelta } from "@/lib/bias/chart-math";
+import { BiasSmoother, SMOOTH, applySmoothing } from "@/lib/bias/smooth";
 import type { HeatFrame } from "@/lib/bias/footprint";
 
 const HEAT_KEEP_MS = 45 * 60_000;
@@ -160,6 +161,7 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
   const profileRef = useRef<Candle[]>([]);
   const heatRef = useRef<HeatFrame[]>([]);
   const tickRef = useRef(0);
+  const smoothersRef = useRef({ "5m": new BiasSmoother(SMOOTH["5m"]), "15m": new BiasSmoother(SMOOTH["15m"]), "1h": new BiasSmoother(SMOOTH["1h"]) });
 
   function snapshotTape(): TapeState {
     return {
@@ -256,6 +258,7 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
     }
     coinRef.current = coin;
     sigFigsRef.current = null;
+    for (const sm of Object.values(smoothersRef.current)) sm.reset();
     lastBookRef.current = null;
     lastImbRef.current = null;
     candlesRef.current = [];
@@ -583,8 +586,15 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
           cohort: cohortRef.current?.data ?? null,
           cohortLoaded: cohortRef.current !== null,
         };
-        const bias = computeBias(input, H15);
-        const mtf = { "5m": computeBias(input, H5), "15m": bias, "1h": computeBias(input, H60) };
+        // Raw engine reads → smoothed, hysteresis-held reads (what the user sees).
+        const sm = smoothersRef.current;
+        const raw = { "5m": computeBias(input, H5), "15m": computeBias(input, H15), "1h": computeBias(input, H60) };
+        const mtf = {
+          "5m": applySmoothing(raw["5m"], sm["5m"].update(raw["5m"].score, now)),
+          "15m": applySmoothing(raw["15m"], sm["15m"].update(raw["15m"].score, now)),
+          "1h": applySmoothing(raw["1h"], sm["1h"].update(raw["1h"].score, now)),
+        };
+        const bias = mtf["15m"];
 
         const iv = intervalRef.current;
         const ivMs = CHART_INTERVALS[iv];

@@ -9,7 +9,7 @@
 // functions so the two tabs can never disagree on the same inputs.
 // ════════════════════════════════════════════════════════════════
 
-import { cohortSignal, crowdingSignal, WEIGHTS } from "@/lib/bias/engine";
+import { cohortSignal, crowdingSignal } from "@/lib/bias/engine";
 import type { CoinCohorts } from "@/lib/cohorts/cohorts";
 
 export interface ScanMarket {
@@ -40,10 +40,10 @@ export function scanRow(m: ScanMarket, c: CoinCohorts | null | undefined): ScanR
   const cohort = cohortSignal(c ?? null, true);
   const crowd = crowdingSignal([{ t: 0, markPx: m.markPrice, oi: 0, fundingHourly: m.fundingRate8h / 8 / 100 }]);
 
-  const parts = [cohort, crowd].filter((s) => s.available);
-  const w = parts.reduce((s, x) => s + x.weight, 0);
-  // Normalise over the two scannable signals' combined weight.
-  const raw = w > 0 ? parts.reduce((s, x) => s + x.weight * x.score, 0) / (WEIGHTS.cohort + WEIGHTS.crowding) : 0;
+  // The scanner ranks by positioning only, with its own fixed weights
+  // (independent of the Terminal's order-flow weights).
+  const W = { cohort: 0.65, crowding: 0.35 };
+  const raw = (cohort.available ? W.cohort * cohort.score : 0) + (crowd.available ? W.crowding * crowd.score : 0);
   const positioning = Math.round(Math.max(-1, Math.min(1, raw)) * 100);
 
   const nS = c ? c.sharps.longWallets + c.sharps.shortWallets : 0;
