@@ -264,8 +264,8 @@ export function ScreenerModule() {
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-bg-base">
       {/* Toolbar — title, views, search, funding unit, columns */}
-      <div className="h-16 shrink-0 flex items-center gap-6 px-6 border-b border-border">
-        <span className="text-[20px] font-semibold tracking-[-0.02em] text-txt-primary">Screener</span>
+      <div className="h-16 shrink-0 flex items-center gap-4 xl:gap-6 px-4 xl:px-6 border-b border-border">
+        <span className="hidden lg:block text-[20px] font-semibold tracking-[-0.02em] text-txt-primary">Screener</span>
         <div className="flex items-center h-full gap-5">
           {(["market", "positioning"] as View[]).map((v) => (
             <button
@@ -280,13 +280,13 @@ export function ScreenerModule() {
             </button>
           ))}
         </div>
-        <div className="ml-auto flex items-center gap-3">
-          <div className="flex items-center gap-2.5 h-10 px-3.5 rounded-lg border border-border-strong bg-panel w-[280px] focus-within:border-txt-muted">
+        <div className="ml-auto flex items-center gap-2 xl:gap-3 min-w-0">
+          <div className="flex items-center gap-2.5 h-10 px-3.5 rounded-lg border border-border-strong bg-panel w-[180px] xl:w-[280px] min-w-0 focus-within:border-txt-muted">
             <Search className="w-4 h-4 text-txt-muted shrink-0" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search markets" className="flex-1 min-w-0 bg-transparent outline-none text-[14px] text-txt-primary placeholder:text-txt-muted" />
             <span className="ds-num text-[12.5px] text-txt-muted shrink-0">{rows.length}/{total}</span>
           </div>
-          <div className="flex items-center h-10 rounded-lg border border-border-strong p-1" title="Funding rate unit">
+          <div className="flex items-center h-10 shrink-0 rounded-lg border border-border-strong p-1" title="Funding rate unit">
             {(["1h", "8h", "apr"] as FundUnit[]).map((u) => (
               <button
                 key={u}
