@@ -1,6 +1,7 @@
 "use client";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
+import { SignalSection } from "./signal-section";
 
 // ════════════════════════════════════════════════════════════════
 // Public track record. Every 15 min the server snapshots the Bias Scanner;
@@ -108,6 +109,8 @@ export function TrackRecordModule() {
             <div className="grid gap-4 md:grid-cols-3 mb-8">
               {(["5m", "15m", "1h"] as const).map((h) => <FlowCard key={h} horizon={h} s={flow?.horizons?.[h]} />)}
             </div>
+
+            <SignalSection />
 
             <h2 className="ds-section-title mb-1">Positioning calls</h2>
             <p className="text-[12.5px] text-txt-muted mb-3 max-w-[760px]">
