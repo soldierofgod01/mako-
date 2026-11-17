@@ -47,7 +47,7 @@ export type IndicatorId = "vwap" | "profile" | "heatmap" | "footprint" | "bubble
 export type IndicatorState = "off" | "on" | "hidden";
 export type Indicators = Record<IndicatorId, IndicatorState>;
 
-export const INDICATORS: { id: IndicatorId; label: string; desc: string }[] = [
+const ALL_INDICATORS: { id: IndicatorId; label: string; desc: string }[] = [
   { id: "vwap", label: "VWAP", desc: "Daily volume-weighted average price" },
   { id: "profile", label: "Session volume profile", desc: "Today (UTC) · POC and value area" },
   { id: "heatmap", label: "Order book heatmap", desc: "Resting liquidity over time · live session" },
@@ -57,6 +57,12 @@ export const INDICATORS: { id: IndicatorId; label: string; desc: string }[] = [
   { id: "delta", label: "Delta", desc: "Net aggressive volume per candle · live session" },
   { id: "cvd", label: "CVD", desc: "Cumulative volume delta · live session" },
 ];
+
+// Parked Nov 2026: browser-only tape/book made these far weaker than dedicated
+// order-flow terminals (MMT). Code and layers are kept so they can return,
+// e.g. Large trades bubbles once prints are served from stored history.
+export const PARKED_INDICATORS: IndicatorId[] = ["heatmap", "footprint", "bubbles"];
+export const INDICATORS = ALL_INDICATORS.filter((i) => !PARKED_INDICATORS.includes(i.id));
 
 export const DEFAULT_INDICATORS: Indicators = {
   vwap: "off", profile: "off", heatmap: "off", footprint: "off", bubbles: "off", liqs: "off", delta: "off", cvd: "off",

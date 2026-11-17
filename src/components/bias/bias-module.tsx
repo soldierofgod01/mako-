@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { BarChart3, Check, ChevronDown, PanelRight, Search } from "lucide-react";
 import { useAppStore } from "@/stores/app-store";
 import { useOrderflow, CHART_INTERVALS, type ChartInterval, type OrderflowState } from "@/lib/hooks/use-orderflow";
-import { DEFAULT_INDICATORS, INDICATORS, OrderflowChart, type Indicators } from "./orderflow-chart";
+import { DEFAULT_INDICATORS, INDICATORS, OrderflowChart, PARKED_INDICATORS, type Indicators } from "./orderflow-chart";
 import { TokenIcon } from "@/components/scanner/token-icon";
 import { fmtUsd, WARMUP_MINUTES, type BiasResult, type Signal } from "@/lib/bias/engine";
 import { cn } from "@/lib/utils";
@@ -51,7 +51,11 @@ export function BiasModule() {
       const v = localStorage.getItem("mako:chart:interval") as ChartInterval | null;
       if (v && v in CHART_INTERVALS) setIntervalState(v);
       const ind = localStorage.getItem("mako:chart:indicators:v2");
-      if (ind) setIndicatorsState({ ...DEFAULT_INDICATORS, ...JSON.parse(ind) });
+      if (ind) {
+        const saved = { ...DEFAULT_INDICATORS, ...JSON.parse(ind) } as Indicators;
+        for (const id of PARKED_INDICATORS) saved[id] = "off";
+        setIndicatorsState(saved);
+      }
       if (localStorage.getItem("mako:terminal:panel") === "0") setPanelOpen(false);
     } catch { /* ignore */ }
   }, []);
@@ -103,7 +107,7 @@ export function BiasModule() {
               <TrackRecord of={of} />
               <p className="text-[11px] text-txt-muted leading-[1.55] px-4 py-3">
                 Order flow is read live from Hyperliquid from the moment this tab opens. HL has no public historical tape,
-                so delta, prints, heatmap and OI change build up over the session. Cohorts come from Hyperliquid&rsquo;s public
+                so delta, prints and OI change build up over the session. Cohorts come from Hyperliquid&rsquo;s public
                 leaderboard; past PnL doesn&rsquo;t guarantee future skill. A bias is a read on who is in control, not a trade call.
               </p>
             </div>
