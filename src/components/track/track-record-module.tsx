@@ -35,7 +35,28 @@ interface Stats {
   }[];
 }
 
+interface FlowH {
+  n_min: number; hit_min: number | null; edge_min_bps: number | null; bench_min: number | null;
+  n_ep: number; hit_ep: number | null; edge_ep_bps: number | null;
+}
+interface FlowStats {
+  since: string | null;
+  last: string | null;
+  coins: string[] | null;
+  horizons: Partial<Record<"5m" | "15m" | "1h", FlowH>>;
+}
+
 export function TrackRecordModule() {
+  const { data: flow } = useQuery({
+    queryKey: ["track-flow"],
+    queryFn: async (): Promise<FlowStats> => {
+      const res = await fetch("/api/track/flow");
+      if (!res.ok) throw new Error("flow");
+      return res.json();
+    },
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: false,
+  });
   const { data, isLoading, isError } = useQuery({
     queryKey: ["track-stats"],
     queryFn: async (): Promise<Stats> => {
@@ -56,8 +77,8 @@ export function TrackRecordModule() {
         <div className="mb-7">
           <h1 className="ds-page-title">Track record</h1>
           <p className="mt-2 text-[14px] text-txt-secondary leading-[1.55] max-w-[720px]">
-            Every 15 minutes Mako snapshots the Bias Scanner and logs it. One and four hours later the price is checked and the
-            call is graded automatically. Nothing is edited or deleted. Each number sits next to the benchmark it has to beat.
+            Mako records its own calls around the clock and grades them automatically against what price did next. Nothing is
+            edited or deleted. Each number sits next to the benchmark it has to beat.
           </p>
         </div>
 
@@ -74,6 +95,18 @@ export function TrackRecordModule() {
               <span>Last snapshot <span className="ds-num text-txt-primary">{fmtDate(data.last_tick)}</span></span>
               <span>Snapshots <span className="ds-num text-txt-primary">{data.ticks.toLocaleString()}</span></span>
               <span>Logged reads <span className="ds-num text-txt-primary">{data.snapshots.toLocaleString()}</span></span>
+            </div>
+
+            <h2 className="ds-section-title mb-1">Order-flow bias (Terminal)</h2>
+            <p className="text-[12.5px] text-txt-muted mb-3 max-w-[760px]">
+              The Terminal&rsquo;s smoothed bias, recorded every minute around the clock for {flow?.coins?.length ? flow.coins.join(", ") : "BTC, ETH, SOL, HYPE"} and
+              graded 5 minutes, 15 minutes and 1 hour later. The headline is graded per <span className="text-txt-secondary">new call</span> (each time the bias
+              turns long or short), because consecutive minutes of the same call aren&rsquo;t independent. Benchmark: a random caller with the same
+              long/short mix.
+              {flow?.since ? ` Recording since ${fmtDate(flow.since)}.` : " Starts once the recorder is running."}
+            </p>
+            <div className="grid gap-4 md:grid-cols-3 mb-8">
+              {(["5m", "15m", "1h"] as const).map((h) => <FlowCard key={h} horizon={h} s={flow?.horizons?.[h]} />)}
             </div>
 
             <h2 className="ds-section-title mb-1">Positioning calls</h2>
@@ -187,5 +220,39 @@ function Pct({ v }: { v: number }) {
     <span className={cn("ds-num text-[12px] text-right", p >= 0 ? "text-positive" : "text-negative")}>
       {p >= 0 ? "+" : ""}{p.toFixed(2)}%
     </span>
+  );
+}
+
+function FlowCard({ horizon, s }: { horizon: string; s?: FlowH }) {
+  const rate = s?.hit_ep ?? null;
+  const bench = s?.bench_min ?? null;
+  const beat = rate != null && bench != null ? rate - bench : null;
+  const n = s?.n_ep ?? 0;
+  return (
+    <div className="ds-panel ds-panel-signature p-5">
+      <div className="ds-label mb-3">{horizon} bias · graded {horizon} later</div>
+      <div className="flex items-end justify-between">
+        <div>
+          <div className="ds-num text-[30px] font-semibold leading-none text-txt-primary">{rate == null ? "—" : `${(rate * 100).toFixed(1)}%`}</div>
+          <div className="ds-label mt-1.5">per new call · {n} calls</div>
+        </div>
+        <div className="text-right">
+          <div className={cn("ds-num text-[15px] font-medium", s?.edge_ep_bps == null ? "text-txt-muted" : s.edge_ep_bps >= 0 ? "text-positive" : "text-negative")}>
+            {s?.edge_ep_bps == null ? "—" : `${s.edge_ep_bps >= 0 ? "+" : ""}${s.edge_ep_bps.toFixed(1)} bps`}
+          </div>
+          <div className="ds-label mt-1">avg move in call direction</div>
+        </div>
+      </div>
+      <div className="mt-4 pt-3 border-t border-border flex items-center justify-between text-[12px]">
+        <span className="text-txt-muted">
+          Benchmark <span className="ds-num text-txt-secondary">{bench == null ? "—" : `${(bench * 100).toFixed(1)}%`}</span>
+          {s?.hit_min != null && <> · per minute <span className="ds-num text-txt-secondary">{(s.hit_min * 100).toFixed(1)}%</span></>}
+        </span>
+        <span className={cn("ds-num font-medium", beat == null ? "text-txt-muted" : beat > 0 ? "text-positive" : "text-negative")}>
+          {beat == null ? "" : `${beat > 0 ? "+" : ""}${(beat * 100).toFixed(1)} pts`}
+        </span>
+      </div>
+      {n < 50 && <div className="mt-2 text-[11.5px] text-warning">Sample too small to trust ({n} / 50 calls).</div>}
+    </div>
   );
 }
