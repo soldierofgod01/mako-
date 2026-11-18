@@ -5,6 +5,7 @@ import { ScreenerModule } from "@/components/screener/screener-module";
 import { AnalyticsModule } from "@/components/analytics/analytics-module";
 import { TrackRecordModule } from "@/components/track/track-record-module";
 import { useAppStore } from "@/stores/app-store";
+import { ThemeTuner } from "@/components/dev/theme-tuner";
 
 export default function Home() {
   const { activeModule } = useAppStore();
@@ -23,6 +24,7 @@ export default function Home() {
           {activeModule === "track" && <div className="flex-1 flex flex-col overflow-hidden ds-card-panel"><TrackRecordModule /></div>}
         </main>
       </div>
+      <ThemeTuner />
     </div>
   );
 }

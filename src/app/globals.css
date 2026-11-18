@@ -108,7 +108,7 @@
 * { box-sizing: border-box; }
 html { color-scheme: dark; }
 body {
-  background: #040405;
+  background: var(--color-void);
   color: #EDEDEF;
   font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   letter-spacing: -0.006em;
@@ -130,11 +130,15 @@ body {
 
 /* Floating card: the unit of layout. Rounded, one step above the void,
    a crisp edge, a 1px top highlight and a tight drop so it lifts off. */
+:root {
+  --card-edge: rgba(255, 255, 255, 0.07);
+  --card-highlight: rgba(255, 255, 255, 0.045);
+}
 .ds-card-panel {
   background: var(--color-bg-base);
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--card-edge);
   border-radius: 12px;
-  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.045), 0 2px 6px -1px rgba(0, 0, 0, 0.7);
+  box-shadow: inset 0 1px 0 0 var(--card-highlight), 0 2px 6px -1px rgba(0, 0, 0, 0.7);
 }
 
 /* Panel: the base card surface. No gradient, no colored strip. */
@@ -268,9 +272,9 @@ body {
 /* Terminal side column: each section is its own floating card. */
 .terminal-side .ds-panel {
   background: var(--color-bg-base);
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--card-edge);
   border-radius: 12px;
-  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.045), 0 2px 6px -1px rgba(0, 0, 0, 0.7);
+  box-shadow: inset 0 1px 0 0 var(--card-highlight), 0 2px 6px -1px rgba(0, 0, 0, 0.7);
 }
 .terminal-side .ds-panel-signature::before { display: none; }
 .terminal-side .ds-stat-accent::after { display: none; }
