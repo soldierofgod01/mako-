@@ -6,7 +6,7 @@
 // ════════════════════════════════════════════════════════════════
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CornerDownLeft, Search } from "lucide-react";
+import { KeyReturn, MagnifyingGlass } from "@phosphor-icons/react";
 import { useAppStore } from "@/stores/app-store";
 import { TokenIcon } from "@/components/scanner/token-icon";
 import { cn } from "@/lib/utils";
@@ -83,7 +83,7 @@ export function CoinFinder({ open, onClose }: { open: boolean; onClose: () => vo
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-3 px-4 h-[52px] border-b border-border">
-          <Search className="w-4 h-4 text-txt-muted shrink-0" />
+          <MagnifyingGlass size={18} className="text-txt-muted shrink-0" />
           <input
             autoFocus
             value={q}
@@ -110,7 +110,7 @@ export function CoinFinder({ open, onClose }: { open: boolean; onClose: () => vo
               <span className="text-[14px] font-semibold text-txt-primary w-24 truncate">{m.coin}</span>
               <span className="ds-num text-[13px] text-txt-secondary flex-1">{price(m.markPrice)}</span>
               <span className="ds-num text-[12px] text-txt-muted w-20 text-right">{vol(m.volume24hUsd)}</span>
-              <CornerDownLeft className={cn("w-3.5 h-3.5 shrink-0", i === sel ? "text-txt-muted" : "text-transparent")} />
+              <KeyReturn size={16} className={cn("shrink-0", i === sel ? "text-txt-muted" : "text-transparent")} />
             </button>
           ))}
         </div>

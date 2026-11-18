@@ -9,17 +9,17 @@
 import { useEffect, useState } from "react";
 import { useAppStore } from "@/stores/app-store";
 import { cn } from "@/lib/utils";
-import { ScanSearch, BadgeCheck, SquareTerminal, ChartLine, Search } from "lucide-react";
+import { ChartBar, ChartLineUp, ListMagnifyingGlass, MagnifyingGlass, SealCheck, type Icon as PhIcon } from "@phosphor-icons/react";
 import { CoinFinder } from "./coin-finder";
 
 const modules = [
-  { id: "screener", label: "Screener", icon: ScanSearch },
-  { id: "terminal", label: "Terminal", icon: SquareTerminal },
-  { id: "analytics", label: "Analytics", icon: ChartLine },
-  { id: "track", label: "Track", icon: BadgeCheck },
+  { id: "screener", label: "Screener", icon: ListMagnifyingGlass },
+  { id: "terminal", label: "Terminal", icon: ChartLineUp },
+  { id: "analytics", label: "Analytics", icon: ChartBar },
+  { id: "track", label: "Track", icon: SealCheck },
 ];
 
-function RailItem({ label, icon: Icon, active, onClick, title }: { label: string; icon: typeof Search; active?: boolean; onClick: () => void; title?: string }) {
+function RailItem({ label, icon: Icon, active, onClick, title }: { label: string; icon: PhIcon; active?: boolean; onClick: () => void; title?: string }) {
   return (
     <button
       onClick={onClick}
@@ -27,11 +27,12 @@ function RailItem({ label, icon: Icon, active, onClick, title }: { label: string
       className={cn(
         "group w-[52px] flex flex-col items-center gap-1 pt-2 pb-1.5 rounded-[10px] transition-colors duration-100",
         active
-          ? "bg-accent/[0.08] ring-1 ring-inset ring-accent/[0.16]"
+          ? "bg-white/[0.07] ring-1 ring-inset ring-white/[0.07]"
           : "hover:bg-white/[0.04]"
       )}
     >
-      <Icon className={cn("w-[18px] h-[18px]", active ? "text-accent" : "text-txt-muted group-hover:text-txt-primary")} strokeWidth={active ? 2 : 1.75} />
+      {/* Phosphor: duotone marks the active module, regular otherwise. */}
+      <Icon size={20} weight={active ? "duotone" : "regular"} className={cn(active ? "text-txt-primary" : "text-txt-muted group-hover:text-txt-primary")} />
       <span className={cn("text-[10.5px] font-medium leading-none tracking-[-0.01em]", active ? "text-txt-primary" : "text-txt-muted group-hover:text-txt-secondary")}>
         {label}
       </span>
@@ -66,7 +67,7 @@ export function SideNav() {
 
       {/* Search */}
       <div className="mt-2 mb-3">
-        <RailItem label="Search" icon={Search} onClick={() => setFinder(true)} title="Find a coin  ( / )" />
+        <RailItem label="Search" icon={MagnifyingGlass} onClick={() => setFinder(true)} title="Find a coin  ( / )" />
       </div>
       <span className="w-6 h-px bg-white/[0.07] mb-3" />
 
