@@ -246,7 +246,9 @@ export function ScreenerModule() {
   const choosePreset = (id: Preset) => {
     setPreset(id);
     const p = PRESETS.find((x) => x.id === id);
-    if (p?.sort) setSort(p.sort);
+    // Presets without their own sort (All, Favourites) go back to the view's
+    // default — otherwise e.g. Gainers' 24h-change sort sticks after you leave it.
+    setSort(p?.sort ?? (view === "positioning" ? { key: "positioning", dir: -1 } : { key: "volume24h", dir: -1 }));
   };
   const clickSort = (key: keyof ScreenerRow | undefined, align: Align) => {
     if (!key) return;
