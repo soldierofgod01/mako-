@@ -9,12 +9,12 @@
 import { useEffect, useState } from "react";
 import { useAppStore } from "@/stores/app-store";
 import { cn } from "@/lib/utils";
-import { ChartBar, ChartLineUp, ListMagnifyingGlass, MagnifyingGlass, SealCheck, type Icon as PhIcon } from "@phosphor-icons/react";
+import { ChartBar, MagnifyingGlass, Pulse, Rows, SealCheck, type Icon as PhIcon } from "@phosphor-icons/react";
 import { CoinFinder } from "./coin-finder";
 
 const modules = [
-  { id: "screener", label: "Screener", icon: ListMagnifyingGlass },
-  { id: "terminal", label: "Terminal", icon: ChartLineUp },
+  { id: "screener", label: "Screener", icon: Rows },
+  { id: "terminal", label: "Terminal", icon: Pulse },
   { id: "analytics", label: "Analytics", icon: ChartBar },
   { id: "track", label: "Track", icon: SealCheck },
 ];
@@ -31,8 +31,8 @@ function RailItem({ label, icon: Icon, active, onClick, title }: { label: string
           : "hover:bg-white/[0.04]"
       )}
     >
-      {/* Phosphor: duotone marks the active module, regular otherwise. */}
-      <Icon size={20} weight={active ? "duotone" : "regular"} className={cn(active ? "text-txt-primary" : "text-txt-muted group-hover:text-txt-primary")} />
+      {/* Phosphor, regular weight (Sid's pick); the tile marks the active module. */}
+      <Icon size={20} weight="regular" className={cn(active ? "text-txt-primary" : "text-txt-muted group-hover:text-txt-primary")} />
       <span className={cn("text-[10.5px] font-medium leading-none tracking-[-0.01em]", active ? "text-txt-primary" : "text-txt-muted group-hover:text-txt-secondary")}>
         {label}
       </span>
