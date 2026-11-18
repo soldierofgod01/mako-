@@ -9,7 +9,7 @@ import { useEffect, useState } from "react";
 
 interface T { l: number; h: number; s: number; void: number; edge: number; hi: number }
 
-const DEFAULT: T = { l: 4.9, h: 240, s: 12, void: 1.6, edge: 0.07, hi: 0.045 };
+const DEFAULT: T = { l: 3.25, h: 240, s: 12, void: 0.75, edge: 0.065, hi: 0.045 };
 const PRESETS: { name: string; t: T }[] = [
   { name: "Current", t: DEFAULT },
   { name: "Graphite", t: { l: 8, h: 220, s: 6, void: 2, edge: 0.08, hi: 0.05 } },
@@ -18,7 +18,7 @@ const PRESETS: { name: string; t: T }[] = [
   { name: "Zinc", t: { l: 10, h: 240, s: 4, void: 3, edge: 0.08, hi: 0.06 } },
   { name: "Lifted", t: { l: 12, h: 228, s: 8, void: 3, edge: 0.09, hi: 0.07 } },
 ];
-const KEY = "mako:tuner:v1";
+const KEY = "mako:tuner:v2";
 
 function hsl(h: number, s: number, l: number) {
   // → hex, so the values can be pasted straight into globals.css
@@ -75,7 +75,17 @@ export function ThemeTuner() {
   const set = (k: keyof T) => (e: React.ChangeEvent<HTMLInputElement>) => setT({ ...t, [k]: Number(e.target.value) });
   const copy = () => {
     const txt = Object.entries(v).map(([k, val]) => `${k}: ${val};`).join("\n");
-    navigator.clipboard?.writeText(txt).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); });
+    const done = () => { setCopied(true); setTimeout(() => setCopied(false), 1500); };
+    // Clipboard API is blocked in some embedded browsers — fall back to execCommand.
+    const fallback = () => {
+      const ta = document.createElement("textarea");
+      ta.value = txt; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); done(); } catch { /* ignore */ }
+      ta.remove();
+    };
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(txt).then(done, fallback);
+    else fallback();
   };
 
   const row = (label: string, k: keyof T, min: number, max: number, step: number, fmt?: (n: number) => string) => (

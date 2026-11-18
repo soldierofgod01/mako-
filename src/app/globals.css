@@ -16,18 +16,19 @@
   /* ─── Surfaces: warm-dark greys, never pure #000 ─── */
   /* v30 floating panels: the app background is a darker "void"; every
      module sits on rounded cards (bg-base) with gaps showing the void. */
-  --color-void: #040405;           /* behind the cards */
-  --color-bg-base: #0B0B0E;        /* card surface (was the app background) */
-  --color-panel: #0F0F12;          /* cards, panels — darkened for v28 D polish */
-  --color-elevated: #16161A;       /* hover, raised elements */
-  --color-elevated-2: #1E1E23;     /* highest elevation (sticky headers, etc.) */
+  /* Shade picked by Sid with the tuner (19 Nov): L 3.25%, hue 240°, 12% tint. */
+  --color-void: #020202;           /* behind the cards */
+  --color-bg-base: #070709;        /* card surface (was the app background) */
+  --color-panel: #0B0B0E;          /* hover / inner panels — one step above a card */
+  --color-elevated: #0F0F13;       /* raised elements */
+  --color-elevated-2: #131318;     /* active controls */
 
   /* Legacy aliases — old components still reference these.
      Mapped onto the new system so nothing breaks before rebuild. */
-  --color-surface-0: #0B0B0E;
-  --color-surface-1: #131315;
-  --color-surface-2: #1A1A1D;
-  --color-surface-3: #212125;
+  --color-surface-0: #070709;
+  --color-surface-1: #0D0D10;
+  --color-surface-2: #101015;
+  --color-surface-3: #141419;
   --color-panel-1: #131315;
   --color-panel-2: #131315;
   --color-panel-3: #1A1A1D;
@@ -131,7 +132,7 @@ body {
 /* Floating card: the unit of layout. Rounded, one step above the void,
    a crisp edge, a 1px top highlight and a tight drop so it lifts off. */
 :root {
-  --card-edge: rgba(255, 255, 255, 0.07);
+  --card-edge: rgba(255, 255, 255, 0.065);
   --card-highlight: rgba(255, 255, 255, 0.045);
 }
 .ds-card-panel {
