@@ -9,14 +9,15 @@
 import { useEffect, useState } from "react";
 import { useAppStore } from "@/stores/app-store";
 import { cn } from "@/lib/utils";
-import { ChartBar, MagnifyingGlass, Pulse, Rows, SealCheck, type Icon as PhIcon } from "@phosphor-icons/react";
+import { ChartBar, MagnifyingGlass, Pulse, Rows, type Icon as PhIcon } from "@phosphor-icons/react";
 import { CoinFinder } from "./coin-finder";
 
 const modules = [
   { id: "screener", label: "Screener", icon: Rows },
   { id: "terminal", label: "Terminal", icon: Pulse },
   { id: "analytics", label: "Analytics", icon: ChartBar },
-  { id: "track", label: "Track", icon: SealCheck },
+  // Track record is hidden from the rail until the signals have a proven
+  // edge; it's reachable at /?track. Grading runs in the database regardless.
 ];
 
 function RailItem({ label, icon: Icon, active, onClick, title }: { label: string; icon: PhIcon; active?: boolean; onClick: () => void; title?: string }) {

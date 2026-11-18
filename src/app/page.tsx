@@ -1,4 +1,5 @@
 "use client";
+import { useEffect } from "react";
 import { SideNav } from "@/components/layout/side-nav";
 import { BiasModule } from "@/components/bias/bias-module";
 import { ScreenerModule } from "@/components/screener/screener-module";
@@ -7,7 +8,12 @@ import { TrackRecordModule } from "@/components/track/track-record-module";
 import { useAppStore } from "@/stores/app-store";
 
 export default function Home() {
-  const { activeModule } = useAppStore();
+  const { activeModule, setActiveModule } = useAppStore();
+
+  // Hidden route: the track record isn't in the rail yet — open it with /?track.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).has("track")) setActiveModule("track");
+  }, [setActiveModule]);
 
   // No splash / hub - app opens straight into the dashboard (v20).
   return (
