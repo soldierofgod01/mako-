@@ -67,6 +67,7 @@ export interface Signal {
   value: string;      // the measured number, formatted
   read: string;       // plain-English meaning
   why?: string;       // shown when unavailable
+  pre?: number;       // score before the absorption discount (logged for re-tuning)
 }
 
 export interface BiasResult {
@@ -474,6 +475,7 @@ export function computeBias(input: EngineInput, h: Horizon = H15): BiasResult {
     const k = 1 - Math.min(1, Math.abs(absorb.score));
     for (const s of signals) {
       if ((s.id === "delta" || s.id === "whales") && s.available && sign(s.score) === -sign(absorb.score)) {
+        s.pre = s.score;
         s.score *= k;
         s.read += " Discounted: price isn't following this aggression (absorption).";
       }

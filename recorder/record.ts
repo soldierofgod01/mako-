@@ -5,6 +5,16 @@
 // engine and smoother the Terminal uses, and every minute writes to Supabase:
 //   • flow_bias — raw + smoothed bias per horizon, with price (graded later)
 //   • flow_bars — 1-minute aggressive buy/sell volume (history for re-tuning)
+// Each flow_bias row also carries every signal's own score (`sig`) and the
+// book mid, so we can measure which inputs actually predict price.
+//
+// Continuity: RUN_MODE decides how a run starts.
+//   • "handoff"  — dispatched by the previous run ~25 min before it ends. The
+//                  runs overlap; this one holds back bias rows until the old
+//                  one has finished (bars dedupe on (coin, t)).
+//   • "schedule" — hourly backup. Exits at once if a recorder is already
+//                  writing, so it only ever fills a real gap.
+//   • "force"    — manual dispatch: always records.
 // Usage:  TRACK_TOKEN=… npx tsx recorder/record.ts
 // ════════════════════════════════════════════════════════════════
 
@@ -32,6 +42,15 @@ const COINS = (process.env.COINS ?? "BTC,ETH,SOL,HYPE").split(",").map((s) => s.
 const RUN_MS = Number(process.env.RUN_MINUTES ?? 340) * 60_000;
 const TOKEN = process.env.TRACK_TOKEN ?? "";
 const TAPE_KEEP = 65 * 60_000;
+const RUN_MODE = (process.env.RUN_MODE ?? "force") as "handoff" | "schedule" | "force";
+const HANDOFF_BEFORE_END_MS = 25 * 60_000;
+// In a handoff, the previous run is still writing for up to 25 min. Hold back
+// bias rows a little longer so the two runs' smoothers never interleave.
+const HOLD_BIAS_MS = RUN_MODE === "handoff" ? 27 * 60_000 : 0;
+const GH_TOKEN = process.env.GITHUB_TOKEN ?? "";
+const GH_REPO = process.env.GITHUB_REPOSITORY ?? "";
+const WORKFLOW_FILE = "flow-recorder.yml";
+const SIG_KEYS: Record<string, string> = { delta: "d", absorption: "a", oi: "o", whales: "w", book: "b", crowding: "f", cohort: "c" };
 const HORIZONS: Horizon[] = [H5, H15, H60];
 
 if (!TOKEN) {
@@ -53,7 +72,8 @@ interface CoinState {
   cohortLoaded: boolean;
   sigFigs: number | null;
   smoothers: Record<string, BiasSmoother>;
-  latest: Record<string, { raw: number; score: number; direction: string; coverage: number; warming: boolean }>;
+  latest: Record<string, { raw: number; score: number; direction: string; coverage: number; warming: boolean; sig: Record<string, number | null> }>;
+  mid: number | null;
   bars: Map<number, Bar>;
 }
 
@@ -61,7 +81,7 @@ const S = new Map<string, CoinState>(
   COINS.map((c) => [c, {
     coin: c, trades: [], book: [], lastImb: null, ctx: [], candles: [], vol24h: 0, cohort: null, cohortLoaded: false, sigFigs: null,
     smoothers: Object.fromEntries(HORIZONS.map((h) => [h.id, new BiasSmoother(SMOOTH[h.id])])),
-    latest: {}, bars: new Map(),
+    latest: {}, bars: new Map(), mid: null,
   }])
 );
 
@@ -122,6 +142,7 @@ function onBook(d: { coin: string; time?: number; levels: { px: string; sz: stri
   if (!bids.length || !asks.length) return;
   const mid = (bids[0].px + asks[0].px) / 2;
   if (!(mid > 0)) return;
+  st.mid = mid;
   // Same band logic as the Terminal: 0.5% or as deep as the 20 levels reach.
   const band = Math.min(0.005, (mid - bids[bids.length - 1].px) / mid, (asks[asks.length - 1].px - mid) / mid);
   const bidUsd = bids.filter((l) => (mid - l.px) / mid <= band).reduce((s, l) => s + l.usd, 0);
@@ -208,7 +229,10 @@ function tick() {
     for (const h of HORIZONS) {
       const b = computeBias(input, h);
       const sm = st.smoothers[h.id].update(b.score, now);
-      st.latest[h.id] = { raw: b.score, score: sm.score, direction: sm.direction, coverage: b.coverage, warming: b.warmingUp };
+      // Per-signal scores, BEFORE the absorption discount (null = no data).
+      const sig: Record<string, number | null> = {};
+      for (const s of b.signals) sig[SIG_KEYS[s.id] ?? s.id] = s.available ? Math.round((s.pre ?? s.score) * 100) / 100 : null;
+      st.latest[h.id] = { raw: b.score, score: sm.score, direction: sm.direction, coverage: b.coverage, warming: b.warmingUp, sig };
     }
   }
 }
@@ -220,16 +244,19 @@ let written = { bias: 0, bars: 0 };
 // The minute recording started in is incomplete — never write its bar.
 const START_MINUTE = Math.floor(Date.now() / 60_000) * 60_000;
 
+const STARTED_AT = Date.now();
+
 async function flush(minuteStart: number) {
   const iso = new Date(minuteStart).toISOString();
+  const holdBias = Date.now() - STARTED_AT < HOLD_BIAS_MS;
   for (const st of S.values()) {
     const px = st.trades[st.trades.length - 1]?.px;
-    if (px) {
+    if (px && !holdBias) {
       for (const h of HORIZONS) {
         const l = st.latest[h.id];
         // Only grade warmed-up reads with at least half the signals present.
         if (!l || l.warming || l.coverage < 0.5) continue;
-        pendingBias.push({ t: iso, coin: st.coin, horizon: h.id, raw: l.raw, score: l.score, direction: l.direction, coverage: Math.round(l.coverage * 100) / 100, px });
+        pendingBias.push({ t: iso, coin: st.coin, horizon: h.id, raw: l.raw, score: l.score, direction: l.direction, coverage: Math.round(l.coverage * 100) / 100, px, mid: st.mid, sig: l.sig });
       }
     }
     // Completed bars only (minutes strictly before the current one).
@@ -256,10 +283,48 @@ async function flush(minuteStart: number) {
   }
 }
 
+// ── Continuity ───────────────────────────────────────────────────
+/** Seconds since the newest recorded bar (any run), or null if unknown. */
+async function heartbeatAge(): Promise<number | null> {
+  try {
+    const r = await supabaseRpc<{ age_s: number | null }>("flow_heartbeat", {});
+    return r.age_s;
+  } catch (e) {
+    log("heartbeat check failed", String(e).slice(0, 120));
+    return null;
+  }
+}
+
+/** Start the next run (it overlaps this one, then takes over). Retries a few times. */
+async function dispatchNext(): Promise<boolean> {
+  if (!GH_TOKEN || !GH_REPO) { log("no GITHUB_TOKEN/REPOSITORY — can't hand off"); return false; }
+  for (let i = 0; i < 5; i++) {
+    try {
+      const r = await fetch(`https://api.github.com/repos/${GH_REPO}/actions/workflows/${WORKFLOW_FILE}/dispatches`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${GH_TOKEN}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" },
+        body: JSON.stringify({ ref: process.env.GITHUB_REF_NAME ?? "main", inputs: { mode: "handoff" } }),
+      });
+      if (r.status === 204) { log("handoff: next run dispatched"); return true; }
+      log(`handoff dispatch HTTP ${r.status}: ${(await r.text()).slice(0, 160)}`);
+    } catch (e) { log("handoff dispatch failed", String(e).slice(0, 120)); }
+    await new Promise((res) => setTimeout(res, 15_000 * (i + 1)));
+  }
+  return false;
+}
+
 // ── Main ─────────────────────────────────────────────────────────
 async function main() {
   const start = Date.now();
-  log(`recording ${COINS.join(", ")} for ${RUN_MS / 60_000} min`);
+  if (RUN_MODE === "schedule") {
+    const age = await heartbeatAge();
+    if (age !== null && age < 180) {
+      log(`another recorder is live (last bar ${age}s ago) — backup run not needed, exiting`);
+      process.exit(0);
+    }
+    log(`backup run taking over (last bar ${age ?? "unknown"}s ago)`);
+  }
+  log(`recording ${COINS.join(", ")} for ${RUN_MS / 60_000} min (mode=${RUN_MODE})`);
   await pollCtx();
   await pollCandles();
   await pollCohorts();
@@ -275,6 +340,7 @@ async function main() {
       log(`written bias=${written.bias} bars=${written.bars} | ${parts.join(" ")}`);
     }, 10 * 60_000),
   ];
+  let handedOff = false;
   let lastMinute = Math.floor(Date.now() / 60_000) * 60_000;
   const minuteTimer = setInterval(async () => {
     const m = Math.floor(Date.now() / 60_000) * 60_000;
@@ -282,6 +348,11 @@ async function main() {
       const done = lastMinute;
       lastMinute = m;
       await flush(done);
+    }
+    // Short test runs (RUN_MINUTES < 60) never hand off.
+    if (!handedOff && RUN_MS >= 60 * 60_000 && Date.now() - start > RUN_MS - HANDOFF_BEFORE_END_MS) {
+      handedOff = true;
+      void dispatchNext();
     }
     if (Date.now() - start > RUN_MS) {
       log("run time reached — final flush and exit");
