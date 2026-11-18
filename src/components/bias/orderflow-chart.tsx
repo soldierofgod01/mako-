@@ -129,7 +129,7 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
     const c = createChart(wrapRef.current, {
       autoSize: true,
       layout: {
-        background: { type: ColorType.Solid, color: "#08080A" },
+        background: { type: ColorType.Solid, color: "transparent" }, // canvas shows through (depth pass)
         textColor: AXIS_TEXT,
         fontFamily: FONT,
         fontSize: 11,
