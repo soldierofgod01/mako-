@@ -107,9 +107,9 @@ export function AnalyticsModule() {
   const cohortN = data?.cohort.length ?? 0;
 
   return (
-    <div className="flex-1 overflow-y-auto">
+    <div className="flex-1 overflow-y-auto bg-bg-base">
       {/* Header */}
-      <div className="sticky top-0 z-20 bg-panel/90 backdrop-blur border-b border-line">
+      <div className="sticky top-0 z-20 bg-bg-base/95 backdrop-blur border-b border-border">
         <div className="h-14 px-4 flex items-center gap-4">
           <CoinPicker coin={biasCoin} onPick={setBiasCoin} />
           <div className="flex items-center rounded-md border border-border p-0.5">

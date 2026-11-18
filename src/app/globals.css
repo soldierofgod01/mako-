@@ -13,45 +13,29 @@
    ════════════════════════════════════════════════════════════════ */
 
 @theme {
-  /* ─── Surfaces: a 4-step elevation ramp (v30 depth pass) ───
-     Each level up is lighter. Depth comes from this ramp + shadows +
-     a 1px top highlight — not from borders alone.
-       base      app background, sidebar
-       panel     the raised content canvas, cards
-       elevated  sticky headers, inputs, nested cards, hover
-       elevated-2 active controls, chips
-       float     popovers, menus (always with --shadow-float) */
-  --color-bg-base: #070809;
-  --color-panel: #0D0E10;
-  --color-elevated: #141518;
-  --color-elevated-2: #1B1C20;
-  --color-float: #1E2024;
+  /* ─── Surfaces: warm-dark greys, never pure #000 ─── */
+  /* v30 floating panels: the app background is a darker "void"; every
+     module sits on rounded cards (bg-base) with gaps showing the void. */
+  --color-void: #040405;           /* behind the cards */
+  --color-bg-base: #0B0B0E;        /* card surface (was the app background) */
+  --color-panel: #0F0F12;          /* cards, panels — darkened for v28 D polish */
+  --color-elevated: #16161A;       /* hover, raised elements */
+  --color-elevated-2: #1E1E23;     /* highest elevation (sticky headers, etc.) */
 
-  /* Legacy aliases — mapped onto the ramp. */
-  --color-surface-0: #070809;
-  --color-surface-1: #111215;
-  --color-surface-2: #17181C;
-  --color-surface-3: #1E1F24;
-  --color-panel-1: #111215;
-  --color-panel-2: #111215;
-  --color-panel-3: #17181C;
-  --color-panel-4: #1E1F24;
+  /* Legacy aliases — old components still reference these.
+     Mapped onto the new system so nothing breaks before rebuild. */
+  --color-surface-0: #0B0B0E;
+  --color-surface-1: #131315;
+  --color-surface-2: #1A1A1D;
+  --color-surface-3: #212125;
+  --color-panel-1: #131315;
+  --color-panel-2: #131315;
+  --color-panel-3: #1A1A1D;
+  --color-panel-4: #212125;
 
-  /* ─── Borders: three weights instead of one ───
-     border   row dividers inside tables (quietest)
-     line     panel / card edges
-     border-strong  inputs, active controls */
-  --color-border: rgba(255, 255, 255, 0.05);
-  --color-line: rgba(255, 255, 255, 0.075);
-  --color-border-strong: rgba(255, 255, 255, 0.11);
-
-  /* ─── Shadows (Tailwind: shadow-panel / shadow-pop / shadow-float) ───
-     Dark-UI depth = a thin black ring + a soft drop + a faint top light. */
-  --shadow-panel: inset 0 1px 0 0 rgba(255, 255, 255, 0.035), 0 0 0 1px rgba(0, 0, 0, 0.45), 0 12px 32px -16px rgba(0, 0, 0, 0.7);
-  --shadow-card: inset 0 1px 0 0 rgba(255, 255, 255, 0.04), 0 1px 2px 0 rgba(0, 0, 0, 0.4);
-  --shadow-pop: inset 0 1px 0 0 rgba(255, 255, 255, 0.05), 0 0 0 1px rgba(0, 0, 0, 0.5), 0 8px 24px -6px rgba(0, 0, 0, 0.6);
-  --shadow-float: inset 0 1px 0 0 rgba(255, 255, 255, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.55), 0 24px 60px -12px rgba(0, 0, 0, 0.8);
-  --shadow-header: 0 1px 0 0 rgba(255, 255, 255, 0.05), 0 6px 12px -8px rgba(0, 0, 0, 0.7);
+  /* ─── Borders: barely visible; separation comes from surface step ─── */
+  --color-border: rgba(255, 255, 255, 0.06);
+  --color-border-strong: rgba(255, 255, 255, 0.12);
 
   /* ─── Text: exactly 3 levels ─── */
   --color-txt-primary: #EDEDEF;
@@ -64,10 +48,6 @@
      mint brand accent (#33FFA3). Two greens with clearly different jobs. */
   --color-positive: #1FB880;       /* emerald — "up / positive data" */
   --color-negative: #EF4444;
-  /* Dense-table change colours: slightly muted so a wall of numbers
-     doesn't shout. Headline numbers keep the full-strength pair. */
-  --color-up: #2BBF83;
-  --color-down: #E5566B;
   --color-warning: #F59E0B;
 
   /* ─── Single brand accent — Mako mint (used sparingly: panel edge,
@@ -128,10 +108,7 @@
 * { box-sizing: border-box; }
 html { color-scheme: dark; }
 body {
-  /* Faint light from the top of the screen — reads as depth, not a gradient. */
-  background:
-    radial-gradient(90% 55% at 50% -10%, rgba(255, 255, 255, 0.035), transparent 60%),
-    #070809;
+  background: #040405;
   color: #EDEDEF;
   font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   letter-spacing: -0.006em;
@@ -151,60 +128,21 @@ body {
    COMPONENT PRIMITIVES — the v16 design language
    ════════════════════════════════════════════════════════════════ */
 
-/* Panel: the base card surface — lit from the top, sitting on a soft drop. */
+/* Floating card: the unit of layout. Rounded, one step above the void,
+   a crisp edge, a 1px top highlight and a tight drop so it lifts off. */
+.ds-card-panel {
+  background: var(--color-bg-base);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 12px;
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.045), 0 2px 6px -1px rgba(0, 0, 0, 0.7);
+}
+
+/* Panel: the base card surface. No gradient, no colored strip. */
 .ds-panel {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 120px),
-    var(--color-panel);
-  border: 1px solid var(--color-line);
+  background: var(--color-panel);
+  border: 1px solid var(--color-border);
   border-radius: 12px;
-  box-shadow: var(--shadow-card);
 }
-
-/* The main content canvas: raised above the sidebar/background. */
-.ds-canvas {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.014), transparent 160px),
-    var(--color-panel);
-  border: 1px solid var(--color-line);
-  border-radius: 12px;
-  box-shadow: var(--shadow-panel);
-}
-
-/* Nested card inside a panel (one step up). */
-.ds-card {
-  background: var(--color-elevated);
-  border: 1px solid var(--color-line);
-  border-radius: 8px;
-  box-shadow: var(--shadow-card);
-}
-
-/* Floating layer: popovers, menus, palettes. */
-.ds-float {
-  background: var(--color-float);
-  border: 1px solid var(--color-border-strong);
-  border-radius: 10px;
-  box-shadow: var(--shadow-float);
-}
-
-/* Segmented control: recessed track + raised active segment. */
-.ds-seg {
-  background: rgba(0, 0, 0, 0.25);
-  border: 1px solid var(--color-line);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
-}
-.ds-seg-on {
-  background: var(--color-elevated-2);
-  box-shadow: var(--shadow-card), 0 0 0 1px rgba(255, 255, 255, 0.06);
-}
-
-/* Recessed input well. */
-.ds-input {
-  background: rgba(0, 0, 0, 0.22);
-  border: 1px solid var(--color-line);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
-}
-.ds-input:focus-within { border-color: var(--color-border-strong); }
 
 /* D polish: signature mint top-edge line on primary panels.
    Add class "ds-panel-signature" to the main content panel of a module. */
@@ -249,7 +187,7 @@ body {
   transition: background-color 0.15s ease;
 }
 .ds-row-hover:hover {
-  background-color: rgba(255, 255, 255, 0.025);
+  background-color: rgba(51, 255, 163, 0.045);
 }
 
 /* Section title — sentence case, real weight */
@@ -327,13 +265,12 @@ body {
   letter-spacing: 0.02em;
 }
 
-/* Terminal side panel: flat sections split by 1px rules (TradingView-style),
-   not stacked cards. Nested .ds-card blocks inside still get depth. */
+/* Terminal side column: each section is its own floating card. */
 .terminal-side .ds-panel {
-  background: transparent;
-  border: 0;
-  border-bottom: 1px solid var(--color-border);
-  border-radius: 0;
+  background: var(--color-bg-base);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 12px;
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.045), 0 2px 6px -1px rgba(0, 0, 0, 0.7);
 }
 .terminal-side .ds-panel-signature::before { display: none; }
 .terminal-side .ds-stat-accent::after { display: none; }

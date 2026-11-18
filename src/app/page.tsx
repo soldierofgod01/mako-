@@ -14,12 +14,13 @@ export default function Home() {
     <div className="h-screen flex flex-col overflow-hidden">
       <div className="flex flex-1 overflow-hidden">
         <SideNav />
-        {/* Content sits on a raised canvas above the sidebar — the main depth cue. */}
-        <main className="flex-1 flex flex-col overflow-hidden my-2 mr-2 ds-canvas">
+        {/* Floating panels: modules lay themselves out as rounded cards with
+            8px gaps; the darker void shows between them. */}
+        <main className="flex-1 flex flex-col overflow-hidden py-2 pr-2">
           {activeModule === "screener" && <ScreenerModule />}
           {activeModule === "terminal" && <BiasModule />}
-          {activeModule === "analytics" && <AnalyticsModule />}
-          {activeModule === "track" && <TrackRecordModule />}
+          {activeModule === "analytics" && <div className="flex-1 flex flex-col overflow-hidden ds-card-panel"><AnalyticsModule /></div>}
+          {activeModule === "track" && <div className="flex-1 flex flex-col overflow-hidden ds-card-panel"><TrackRecordModule /></div>}
         </main>
       </div>
     </div>

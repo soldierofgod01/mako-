@@ -79,7 +79,7 @@ export function BiasModule() {
   const liqLevels = of.cohorts?.data?.liqLevels ?? [];
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div className="flex-1 flex flex-col gap-2 overflow-hidden">
       <HeaderBar
         coin={biasCoin}
         onPick={setBiasCoin}
@@ -91,13 +91,13 @@ export function BiasModule() {
         panelOpen={panelOpen}
         onTogglePanel={togglePanel}
       />
-      <div className="flex-1 flex min-h-0">
-        <section className="flex-1 min-w-0">
+      <div className="flex-1 flex gap-2 min-h-0">
+        <section className="flex-1 min-w-0 ds-card-panel overflow-hidden">
           <OrderflowChart key={biasCoin} of={of} coin={biasCoin} interval={interval} indicators={indicators} setIndicators={setIndicators} liqLevels={liqLevels} />
         </section>
         {panelOpen && (
-          <aside className="terminal-side w-[340px] xl:w-[380px] shrink-0 overflow-y-auto border-l border-line bg-black/[0.12]">
-            <div className="flex flex-col">
+          <aside className="terminal-side w-[340px] xl:w-[380px] shrink-0 overflow-y-auto rounded-xl">
+            <div className="flex flex-col gap-2">
               <BiasCard bias={of.bias} of={of} />
               <SignalList bias={of.bias} />
               <LiqPanel of={of} />
@@ -153,17 +153,17 @@ function HeaderBar({ coin, onPick, of, interval, onInterval, indicators, setIndi
   const countdown = useFundingCountdown();
   const chg = ctx?.change24hPct ?? 0;
   return (
-    <div className="h-12 shrink-0 border-b border-line flex items-center gap-3 px-3 bg-black/[0.08]">
+    <div className="h-12 shrink-0 ds-card-panel flex items-center gap-3 px-3">
       <CoinPicker coin={coin} onPick={onPick} />
       <Divider />
-      <div className="ds-seg flex items-center h-7 rounded-md p-[2px]">
+      <div className="flex items-center gap-0.5">
         {(Object.keys(CHART_INTERVALS) as ChartInterval[]).map((i) => (
           <button
             key={i}
             onClick={() => onInterval(i)}
             className={cn(
-              "h-full px-2 rounded-[5px] text-[12px] font-medium ds-num transition-colors",
-              interval === i ? "ds-seg-on text-txt-primary" : "text-txt-muted hover:text-txt-primary"
+              "h-7 px-2 rounded-md text-[12.5px] font-medium ds-num transition-colors",
+              interval === i ? "bg-elevated text-txt-primary" : "text-txt-muted hover:text-txt-primary hover:bg-panel"
             )}
           >
             {i}
@@ -176,7 +176,7 @@ function HeaderBar({ coin, onPick, of, interval, onInterval, indicators, setIndi
       <div className="flex items-baseline gap-2">
         <span className="ds-num text-[16px] font-semibold text-txt-primary">{fmtPrice(of.lastPx)}</span>
         {ctx && (
-          <span className={cn("ds-num text-[12px] font-medium px-1.5 py-0.5 rounded ring-1 ring-inset", chg >= 0 ? "text-positive bg-positive/10 ring-positive/20" : "text-negative bg-negative/10 ring-negative/20")}>
+          <span className={cn("ds-num text-[12px] font-medium px-1.5 py-0.5 rounded", chg >= 0 ? "text-positive bg-positive/10" : "text-negative bg-negative/10")}>
             {chg >= 0 ? "+" : ""}{chg.toFixed(2)}%
           </span>
         )}
@@ -190,7 +190,7 @@ function HeaderBar({ coin, onPick, of, interval, onInterval, indicators, setIndi
       />
       <div className="ml-auto flex items-center gap-3">
         <div className="hidden md:flex items-center gap-1.5">
-          <span className={cn("w-1.5 h-1.5 rounded-full", of.status === "live" ? "bg-accent shadow-[0_0_6px_rgba(51,255,163,0.7)]" : of.status === "connecting" ? "bg-warning animate-pulse" : "bg-negative")} />
+          <span className={cn("w-1.5 h-1.5 rounded-full", of.status === "live" ? "bg-accent" : of.status === "connecting" ? "bg-warning animate-pulse" : "bg-negative")} />
           <span className="text-[11.5px] text-txt-muted">
             {of.status === "live" ? "Live" : of.status === "connecting" ? "Connecting" : "Feed blocked"}
           </span>
@@ -198,7 +198,7 @@ function HeaderBar({ coin, onPick, of, interval, onInterval, indicators, setIndi
         <button
           onClick={onTogglePanel}
           title={panelOpen ? "Hide bias panel" : "Show bias panel"}
-          className={cn("h-7 px-2.5 rounded-md text-[12.5px] font-medium flex items-center gap-1.5 transition-colors", panelOpen ? "ds-seg-on text-txt-primary" : "text-txt-muted hover:text-txt-primary hover:bg-white/[0.04]")}
+          className={cn("h-7 px-2.5 rounded-md text-[12.5px] font-medium flex items-center gap-1.5 transition-colors", panelOpen ? "bg-elevated text-txt-primary" : "text-txt-muted hover:text-txt-primary hover:bg-panel")}
         >
           <PanelRight className="w-3.5 h-3.5" />
           Bias
@@ -208,7 +208,7 @@ function HeaderBar({ coin, onPick, of, interval, onInterval, indicators, setIndi
   );
 }
 
-const Divider = () => <span className="w-px h-5 bg-line" />;
+const Divider = () => <span className="w-px h-5 bg-border" />;
 
 function IndicatorsMenu({ indicators, setIndicators }: { indicators: Indicators; setIndicators: (f: (i: Indicators) => Indicators) => void }) {
   const [open, setOpen] = useState(false);
@@ -226,21 +226,21 @@ function IndicatorsMenu({ indicators, setIndicators }: { indicators: Indicators;
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen((v) => !v)}
-        className={cn("h-7 px-2.5 rounded-md text-[12.5px] font-medium flex items-center gap-1.5 transition-colors", open ? "ds-seg-on text-txt-primary" : "text-txt-secondary hover:text-txt-primary hover:bg-white/[0.04]")}
+        className={cn("h-7 px-2.5 rounded-md text-[12.5px] font-medium flex items-center gap-1.5 transition-colors", open ? "bg-elevated text-txt-primary" : "text-txt-secondary hover:text-txt-primary hover:bg-panel")}
       >
         <BarChart3 className="w-3.5 h-3.5" />
         Indicators
         {active > 0 && <span className="ds-num text-[11px] text-txt-muted">{active}</span>}
       </button>
       {open && (
-        <div className="absolute left-0 top-9 z-50 w-[320px] ds-float py-1.5 animate-slide-in">
+        <div className="absolute left-0 top-9 z-50 w-[320px] rounded-lg border border-border-strong bg-elevated shadow-2xl py-1.5">
           {INDICATORS.map((i) => {
             const isOn = indicators[i.id] !== "off";
             return (
               <button
                 key={i.id}
                 onClick={() => setIndicators((s) => ({ ...s, [i.id]: isOn ? "off" : "on" }))}
-                className="w-full flex items-start gap-3 px-3 py-2 text-left hover:bg-white/[0.05]"
+                className="w-full flex items-start gap-3 px-3 py-2 text-left hover:bg-white/[0.04]"
               >
                 <span className={cn("mt-0.5 w-3.5 h-3.5 rounded-[3px] border flex items-center justify-center shrink-0", isOn ? "bg-accent border-accent" : "border-border-strong")}>
                   {isOn && <Check className="w-2.5 h-2.5 text-black" strokeWidth={3} />}
@@ -308,16 +308,16 @@ export function CoinPicker({ coin, onPick }: { coin: string; onPick: (c: string)
     <div ref={boxRef} className="relative">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-2 h-8 pl-1.5 pr-2.5 rounded-md hover:bg-white/[0.04] transition-colors"
+        className="flex items-center gap-2 h-9 pl-1.5 pr-2.5 rounded-md hover:bg-elevated transition-colors"
       >
-        <TokenIcon symbol={coin} size={20} />
+        <TokenIcon symbol={coin} size={22} />
         <span className="text-[15px] font-semibold text-txt-primary">{coin}</span>
         <span className="text-[11px] text-txt-muted">-PERP</span>
         <ChevronDown className="w-3.5 h-3.5 text-txt-muted" />
       </button>
       {open && (
-        <div className="absolute left-0 top-10 z-50 w-[300px] ds-float overflow-hidden animate-slide-in">
-          <div className="flex items-center gap-2 px-3 h-10 border-b border-line bg-black/[0.15]">
+        <div className="absolute left-0 top-11 z-50 w-[300px] ds-panel shadow-2xl overflow-hidden">
+          <div className="flex items-center gap-2 px-3 h-10 border-b border-border">
             <Search className="w-3.5 h-3.5 text-txt-muted" />
             <input
               autoFocus
@@ -340,7 +340,7 @@ export function CoinPicker({ coin, onPick }: { coin: string; onPick: (c: string)
                 }}
                 className={cn(
                   "w-full flex items-center gap-2.5 px-3 h-9 text-left ds-row-hover",
-                  m.coin === coin && "bg-white/[0.05]"
+                  m.coin === coin && "bg-elevated"
                 )}
               >
                 <TokenIcon symbol={m.coin} size={18} />
@@ -372,7 +372,7 @@ function BiasCard({ bias, of }: { bias: BiasResult | null; of: OrderflowState })
 
   return (
     <div className="ds-panel ds-panel-signature p-5 relative overflow-hidden">
-      {glow && <div className="absolute inset-0 pointer-events-none transition-opacity duration-700" style={{ background: glow }} />}
+      {glow && <div className="absolute inset-0 pointer-events-none" style={{ background: glow }} />}
       <div className="relative">
       <div className="flex items-start justify-between">
         <div>
@@ -394,15 +394,15 @@ function BiasCard({ bias, of }: { bias: BiasResult | null; of: OrderflowState })
       </div>
 
       {/* Gauge */}
-      <div className="mt-5 relative h-2 rounded-full bg-black/40 shadow-[inset_0_1px_2px_rgba(0,0,0,0.6)] ring-1 ring-inset ring-white/[0.04] overflow-hidden">
-        <div className="absolute inset-y-0 left-0 w-[40%] bg-gradient-to-r from-negative/30 to-negative/5" />
-        <div className="absolute inset-y-0 right-0 w-[40%] bg-gradient-to-l from-positive/30 to-positive/5" />
+      <div className="mt-5 relative h-2 rounded-full bg-elevated overflow-hidden">
+        <div className="absolute inset-y-0 left-0 w-[40%] bg-negative/15" />
+        <div className="absolute inset-y-0 right-0 w-[40%] bg-positive/15" />
         <div className="absolute inset-y-0 left-1/2 w-px bg-border-strong" />
       </div>
       <div className="relative h-0">
         <div
-          className="absolute -top-[14px] w-[4px] h-[16px] rounded-full bg-txt-primary shadow-[0_0_0_2px_rgba(7,8,9,0.9),0_0_8px_rgba(255,255,255,0.35)] transition-[left] duration-700"
-          style={{ left: `calc(${markerLeft} - 2px)` }}
+          className="absolute -top-[13px] w-[3px] h-[14px] rounded-full bg-txt-primary transition-[left] duration-700"
+          style={{ left: `calc(${markerLeft} - 1.5px)` }}
         />
       </div>
       <div className="flex justify-between mt-1.5 ds-micro">
@@ -433,8 +433,8 @@ function BiasCard({ bias, of }: { bias: BiasResult | null; of: OrderflowState })
             <span>Reading the tape — bias firms up after {WARMUP_MINUTES} min</span>
             <span className="ds-num">{Math.floor(warm * 100)}%</span>
           </div>
-          <div className="h-1 rounded-full bg-black/40 shadow-[inset_0_1px_1px_rgba(0,0,0,0.6)] overflow-hidden">
-            <div className="h-full bg-accent shadow-[0_0_8px_rgba(51,255,163,0.5)] transition-[width] duration-1000" style={{ width: `${warm * 100}%` }} />
+          <div className="h-1 rounded-full bg-elevated overflow-hidden">
+            <div className="h-full bg-accent transition-[width] duration-1000" style={{ width: `${warm * 100}%` }} />
           </div>
         </div>
       )}
@@ -450,7 +450,7 @@ function BiasCard({ bias, of }: { bias: BiasResult | null; of: OrderflowState })
 
 function MiniStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="ds-card px-2.5 py-2">
+    <div className="rounded-[8px] bg-void border border-border px-2.5 py-2">
       <div className="ds-label text-[11px]">{label}</div>
       <div className="ds-num text-[13px] text-txt-primary mt-0.5">{value}</div>
     </div>
@@ -480,7 +480,7 @@ function SignalRow({ s }: { s: Signal }) {
   const pull = s.available ? s.score : 0;
   const tone = pull >= 0.15 ? "text-positive" : pull <= -0.15 ? "text-negative" : "text-txt-secondary";
   return (
-    <div className={cn("px-4 py-3 border-t border-border transition-colors hover:bg-white/[0.015]", !s.available && "opacity-55")}>
+    <div className={cn("px-4 py-3 border-t border-border", !s.available && "opacity-55")}>
       <div className="flex items-center gap-3">
         <span className="text-[13px] font-medium text-txt-primary flex-1">{s.label}</span>
         <span className="ds-num text-[11px] text-txt-muted">{Math.round(s.weight * 100)}%</span>
@@ -496,7 +496,7 @@ function SignalRow({ s }: { s: Signal }) {
 function PullBar({ v }: { v: number }) {
   const w = Math.min(1, Math.abs(v)) * 50;
   return (
-    <div className="relative w-[72px] h-1.5 rounded-full bg-black/40 shadow-[inset_0_1px_1px_rgba(0,0,0,0.6)] ring-1 ring-inset ring-white/[0.04] overflow-hidden">
+    <div className="relative w-[72px] h-1.5 rounded-full bg-elevated overflow-hidden">
       <div className="absolute inset-y-0 left-1/2 w-px bg-border-strong" />
       <div
         className={cn("absolute inset-y-0", v >= 0 ? "bg-positive" : "bg-negative")}
@@ -641,8 +641,8 @@ function CohortRow({ label, side }: { label: string; side: CohortSide }) {
           {gross > 0 ? `${Math.round(longPct)}% long` : "no positions"}
         </span>
       </div>
-      <div className="h-2 rounded-full bg-negative/45 overflow-hidden flex ring-1 ring-inset ring-black/40">
-        <div className="h-full bg-gradient-to-b from-positive to-positive/75 shadow-[1px_0_0_rgba(0,0,0,0.5)]" style={{ width: `${longPct}%` }} />
+      <div className="h-2 rounded-full bg-negative/40 overflow-hidden flex">
+        <div className="h-full bg-positive/80" style={{ width: `${longPct}%` }} />
       </div>
       <div className="flex justify-between mt-1 ds-num text-[11px] text-txt-muted">
         <span>L {fmtUsd(side.longUsd).replace("+", "")} · {side.longWallets}</span>
@@ -664,7 +664,7 @@ function MtfRow({ mtf }: { mtf: NonNullable<OrderflowState["mtf"]> }) {
         {items.map((b) => {
           const tone = b.direction === "long" ? "text-positive" : b.direction === "short" ? "text-negative" : "text-txt-secondary";
           return (
-            <div key={b.horizon} className={cn("ds-card px-2.5 py-2", b.horizon === "15m" && "bg-elevated-2 ring-1 ring-white/[0.07]")}>
+            <div key={b.horizon} className={cn("rounded-[8px] border px-2.5 py-2", b.horizon === "15m" ? "border-border-strong bg-elevated/40" : "border-border bg-void")}>
               <div className="flex items-baseline justify-between">
                 <span className="ds-num text-[11px] text-txt-muted">{b.horizon}</span>
                 <span className={cn("ds-num text-[12.5px] font-semibold", b.warmingUp ? "text-txt-dim" : tone)}>

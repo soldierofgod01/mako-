@@ -81,13 +81,22 @@ export function SideNav() {
                 onClick={() => setActiveModule(m.id)}
                 title={collapsed ? m.label : undefined}
                 className={cn(
-                  "group relative flex items-center gap-3 h-8 rounded-md text-[13px] font-medium transition-colors duration-100",
+                  "group relative flex items-center gap-3 h-9 rounded-md text-[13px] font-medium transition-colors duration-100",
                   collapsed ? "justify-center px-0" : "px-2.5",
                   active
-                    ? "bg-elevated text-txt-primary shadow-card ring-1 ring-white/[0.06]"
-                    : "text-txt-secondary hover:text-txt-primary hover:bg-white/[0.03]"
+                    ? "bg-surface-2 text-txt-primary"
+                    : "text-txt-secondary hover:text-txt-primary hover:bg-surface-1"
                 )}
               >
+                {/* Active indicator bar on the left */}
+                {active && (
+                  <span
+                    className={cn(
+                      "absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-r",
+                      m.color.replace("text-", "bg-")
+                    )}
+                  />
+                )}
                 <Icon
                   className={cn(
                     "w-[16px] h-[16px] shrink-0",
@@ -106,7 +115,7 @@ export function SideNav() {
         <button
           title={collapsed ? "Search" : undefined}
           className={cn(
-            "flex items-center gap-3 h-8 rounded-md text-[13px] text-txt-secondary hover:text-txt-primary hover:bg-white/[0.03] transition-colors",
+            "flex items-center gap-3 h-9 rounded-md text-[13px] text-txt-secondary hover:text-txt-primary hover:bg-surface-1 transition-colors",
             collapsed ? "justify-center px-0" : "px-2.5"
           )}
         >
@@ -114,7 +123,7 @@ export function SideNav() {
           {!collapsed && (
             <>
               <span className="flex-1 text-left">Search</span>
-              <kbd className="text-[10px] font-mono text-txt-muted bg-elevated border border-line rounded px-1.5 py-0.5 shadow-card">
+              <kbd className="text-[10px] font-mono text-txt-muted bg-surface-2 border border-border rounded px-1.5 py-0.5">
                 /
               </kbd>
             </>
@@ -124,7 +133,7 @@ export function SideNav() {
         <button
           title={collapsed ? "Help" : undefined}
           className={cn(
-            "flex items-center gap-3 h-8 rounded-md text-[13px] text-txt-secondary hover:text-txt-primary hover:bg-white/[0.03] transition-colors",
+            "flex items-center gap-3 h-9 rounded-md text-[13px] text-txt-secondary hover:text-txt-primary hover:bg-surface-1 transition-colors",
             collapsed ? "justify-center px-0" : "px-2.5"
           )}
         >
@@ -136,7 +145,7 @@ export function SideNav() {
           onClick={toggleCollapsed}
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           className={cn(
-            "flex items-center gap-3 h-8 rounded-md text-[13px] text-txt-muted hover:text-txt-primary hover:bg-white/[0.03] transition-colors mt-1",
+            "flex items-center gap-3 h-9 rounded-md text-[13px] text-txt-muted hover:text-txt-primary hover:bg-surface-1 transition-colors mt-1",
             collapsed ? "justify-center px-0" : "px-2.5"
           )}
         >

@@ -73,7 +73,7 @@ export function TrackRecordModule() {
     s ? new Date(s).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false }) : "—";
 
   return (
-    <div className="flex-1 overflow-y-auto">
+    <div className="flex-1 overflow-y-auto bg-bg-base">
       <div className="px-6 md:px-10 py-8 max-w-[1100px] mx-auto">
         <div className="mb-7">
           <h1 className="ds-page-title">Track record</h1>
