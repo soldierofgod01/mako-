@@ -1,164 +1,86 @@
 "use client";
-import { useState, useEffect } from "react";
+// ════════════════════════════════════════════════════════════════
+// Nav rail — 64px, icon + label (Artemis-style). Mako has a handful of
+// modules, so a wide sidebar was mostly empty space; the rail gives that
+// width back to the chart and tables. Sits on the dark background behind
+// the floating cards (Linear/Vercel pattern).
+// Search opens the coin finder (also "/" anywhere outside a text field).
+// ════════════════════════════════════════════════════════════════
+import { useEffect, useState } from "react";
 import { useAppStore } from "@/stores/app-store";
 import { cn } from "@/lib/utils";
-import {
-  ScanSearch,
-  BadgeCheck,
-  SquareTerminal,
-  ChartLine,
-  ChevronLeft,
-  ChevronRight,
-  Search,
-  HelpCircle,
-} from "lucide-react";
+import { ScanSearch, BadgeCheck, SquareTerminal, ChartLine, Search } from "lucide-react";
+import { CoinFinder } from "./coin-finder";
 
 const modules = [
-  { id: "screener", label: "Screener", icon: ScanSearch, color: "text-scanner" },
-  { id: "terminal", label: "Terminal", icon: SquareTerminal, color: "text-radar" },
-  { id: "analytics", label: "Analytics", icon: ChartLine, color: "text-radar" },
-  { id: "track", label: "Track record", icon: BadgeCheck, color: "text-radar" },
+  { id: "screener", label: "Screener", icon: ScanSearch },
+  { id: "terminal", label: "Terminal", icon: SquareTerminal },
+  { id: "analytics", label: "Analytics", icon: ChartLine },
+  { id: "track", label: "Track", icon: BadgeCheck },
 ];
+
+function RailItem({ label, icon: Icon, active, onClick, title }: { label: string; icon: typeof Search; active?: boolean; onClick: () => void; title?: string }) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      className={cn(
+        "group w-[52px] flex flex-col items-center gap-1 pt-2 pb-1.5 rounded-[10px] transition-colors duration-100",
+        active
+          ? "bg-accent/[0.08] ring-1 ring-inset ring-accent/[0.16]"
+          : "hover:bg-white/[0.04]"
+      )}
+    >
+      <Icon className={cn("w-[18px] h-[18px]", active ? "text-accent" : "text-txt-muted group-hover:text-txt-primary")} strokeWidth={active ? 2 : 1.75} />
+      <span className={cn("text-[10.5px] font-medium leading-none tracking-[-0.01em]", active ? "text-txt-primary" : "text-txt-muted group-hover:text-txt-secondary")}>
+        {label}
+      </span>
+    </button>
+  );
+}
 
 export function SideNav() {
   const { activeModule, setActiveModule } = useAppStore();
-  const [collapsed, setCollapsed] = useState(false);
+  const [finder, setFinder] = useState(false);
 
-  // Persist collapsed state across page loads
+  // "/" opens the coin finder unless you're typing somewhere.
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const saved = localStorage.getItem("trackr:sidenav:collapsed");
-    if (saved === "1") setCollapsed(true);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      e.preventDefault();
+      setFinder(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const toggleCollapsed = () => {
-    setCollapsed((prev) => {
-      const next = !prev;
-      if (typeof window !== "undefined") {
-        localStorage.setItem("trackr:sidenav:collapsed", next ? "1" : "0");
-      }
-      return next;
-    });
-  };
-
   return (
-    <aside
-      className={cn(
-        "shrink-0 flex flex-col bg-transparent transition-[width] duration-200 ease-out",
-        collapsed ? "w-[60px]" : "w-[200px]"
-      )}
-    >
-      {/* Logo block */}
-      <div
-        className={cn(
-          "h-14 flex items-center px-3 shrink-0",
-          collapsed ? "justify-center" : "justify-between"
-        )}
-      >
-        <div className="flex items-center gap-2 overflow-hidden">
-          {/* eslint-disable-next-line @next/next/no-img-element -- tiny static logo, no optimisation needed */}
-          <img src="/mako-star.png" alt="Mako" width={28} height={28} className="w-7 h-7 shrink-0 object-contain" />
-          {!collapsed && (
-            <div className="flex items-baseline gap-1.5 whitespace-nowrap">
-              <span className="font-sans font-bold text-[15px] tracking-tight">MAKO</span>
-              <span className="text-[9.5px] text-txt-muted font-mono uppercase tracking-[0.1em]">
-                beta
-              </span>
-            </div>
-          )}
-        </div>
+    <aside className="w-16 shrink-0 flex flex-col items-center bg-transparent py-2">
+      {/* Logo */}
+      <div className="h-12 flex items-center justify-center shrink-0" title="Mako">
+        {/* eslint-disable-next-line @next/next/no-img-element -- tiny static logo */}
+        <img src="/mako-star.png" alt="Mako" width={28} height={28} className="w-7 h-7 object-contain" />
       </div>
 
-      {/* Module list */}
-      <nav className="flex-1 overflow-y-auto py-3 px-2">
-        <div className="flex flex-col gap-0.5">
-          {modules.map((m) => {
-            const Icon = m.icon;
-            const active = activeModule === m.id;
-            return (
-              <button
-                key={m.id}
-                onClick={() => setActiveModule(m.id)}
-                title={collapsed ? m.label : undefined}
-                className={cn(
-                  "group relative flex items-center gap-3 h-9 rounded-md text-[13px] font-medium transition-colors duration-100",
-                  collapsed ? "justify-center px-0" : "px-2.5",
-                  active
-                    ? "bg-surface-2 text-txt-primary"
-                    : "text-txt-secondary hover:text-txt-primary hover:bg-surface-1"
-                )}
-              >
-                {/* Active indicator bar on the left */}
-                {active && (
-                  <span
-                    className={cn(
-                      "absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-r",
-                      m.color.replace("text-", "bg-")
-                    )}
-                  />
-                )}
-                <Icon
-                  className={cn(
-                    "w-[16px] h-[16px] shrink-0",
-                    active ? m.color : "text-txt-secondary group-hover:text-txt-primary"
-                  )}
-                />
-                {!collapsed && <span className="truncate">{m.label}</span>}
-              </button>
-            );
-          })}
-        </div>
+      {/* Search */}
+      <div className="mt-2 mb-3">
+        <RailItem label="Search" icon={Search} onClick={() => setFinder(true)} title="Find a coin  ( / )" />
+      </div>
+      <span className="w-6 h-px bg-white/[0.07] mb-3" />
+
+      {/* Modules */}
+      <nav className="flex flex-col items-center gap-1.5">
+        {modules.map((m) => (
+          <RailItem key={m.id} label={m.label} icon={m.icon} active={activeModule === m.id} onClick={() => setActiveModule(m.id)} />
+        ))}
       </nav>
 
-      {/* Footer block — search, help, collapse toggle */}
-      <div className="p-2 flex flex-col gap-0.5 shrink-0">
-        <button
-          title={collapsed ? "Search" : undefined}
-          className={cn(
-            "flex items-center gap-3 h-9 rounded-md text-[13px] text-txt-secondary hover:text-txt-primary hover:bg-surface-1 transition-colors",
-            collapsed ? "justify-center px-0" : "px-2.5"
-          )}
-        >
-          <Search className="w-[16px] h-[16px] shrink-0" />
-          {!collapsed && (
-            <>
-              <span className="flex-1 text-left">Search</span>
-              <kbd className="text-[10px] font-mono text-txt-muted bg-surface-2 border border-border rounded px-1.5 py-0.5">
-                /
-              </kbd>
-            </>
-          )}
-        </button>
+      {/* Footer: beta tag */}
+      <div className="mt-auto pb-1 text-[9px] font-medium uppercase tracking-[0.12em] text-txt-dim">beta</div>
 
-        <button
-          title={collapsed ? "Help" : undefined}
-          className={cn(
-            "flex items-center gap-3 h-9 rounded-md text-[13px] text-txt-secondary hover:text-txt-primary hover:bg-surface-1 transition-colors",
-            collapsed ? "justify-center px-0" : "px-2.5"
-          )}
-        >
-          <HelpCircle className="w-[16px] h-[16px] shrink-0" />
-          {!collapsed && <span className="truncate">Help</span>}
-        </button>
-
-        <button
-          onClick={toggleCollapsed}
-          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          className={cn(
-            "flex items-center gap-3 h-9 rounded-md text-[13px] text-txt-muted hover:text-txt-primary hover:bg-surface-1 transition-colors mt-1",
-            collapsed ? "justify-center px-0" : "px-2.5"
-          )}
-        >
-          {collapsed ? (
-            <ChevronRight className="w-[16px] h-[16px] shrink-0" />
-          ) : (
-            <>
-              <ChevronLeft className="w-[16px] h-[16px] shrink-0" />
-              <span className="truncate">Collapse</span>
-            </>
-          )}
-        </button>
-      </div>
+      <CoinFinder open={finder} onClose={() => setFinder(false)} />
     </aside>
   );
 }
