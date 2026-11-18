@@ -44,14 +44,14 @@ export function SideNav() {
   return (
     <aside
       className={cn(
-        "shrink-0 flex flex-col bg-surface-0 border-r border-border transition-[width] duration-200 ease-out",
+        "shrink-0 flex flex-col bg-transparent transition-[width] duration-200 ease-out",
         collapsed ? "w-[60px]" : "w-[200px]"
       )}
     >
       {/* Logo block */}
       <div
         className={cn(
-          "h-14 flex items-center border-b border-border px-3 shrink-0",
+          "h-14 flex items-center px-3 shrink-0",
           collapsed ? "justify-center" : "justify-between"
         )}
       >
@@ -81,22 +81,13 @@ export function SideNav() {
                 onClick={() => setActiveModule(m.id)}
                 title={collapsed ? m.label : undefined}
                 className={cn(
-                  "group relative flex items-center gap-3 h-9 rounded-md text-[13px] font-medium transition-colors duration-100",
+                  "group relative flex items-center gap-3 h-8 rounded-md text-[13px] font-medium transition-colors duration-100",
                   collapsed ? "justify-center px-0" : "px-2.5",
                   active
-                    ? "bg-surface-2 text-txt-primary"
-                    : "text-txt-secondary hover:text-txt-primary hover:bg-surface-1"
+                    ? "bg-elevated text-txt-primary shadow-card ring-1 ring-white/[0.06]"
+                    : "text-txt-secondary hover:text-txt-primary hover:bg-white/[0.03]"
                 )}
               >
-                {/* Active indicator bar on the left */}
-                {active && (
-                  <span
-                    className={cn(
-                      "absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-r",
-                      m.color.replace("text-", "bg-")
-                    )}
-                  />
-                )}
                 <Icon
                   className={cn(
                     "w-[16px] h-[16px] shrink-0",
@@ -111,11 +102,11 @@ export function SideNav() {
       </nav>
 
       {/* Footer block — search, help, collapse toggle */}
-      <div className="border-t border-border p-2 flex flex-col gap-0.5 shrink-0">
+      <div className="p-2 flex flex-col gap-0.5 shrink-0">
         <button
           title={collapsed ? "Search" : undefined}
           className={cn(
-            "flex items-center gap-3 h-9 rounded-md text-[13px] text-txt-secondary hover:text-txt-primary hover:bg-surface-1 transition-colors",
+            "flex items-center gap-3 h-8 rounded-md text-[13px] text-txt-secondary hover:text-txt-primary hover:bg-white/[0.03] transition-colors",
             collapsed ? "justify-center px-0" : "px-2.5"
           )}
         >
@@ -123,7 +114,7 @@ export function SideNav() {
           {!collapsed && (
             <>
               <span className="flex-1 text-left">Search</span>
-              <kbd className="text-[10px] font-mono text-txt-muted bg-surface-2 border border-border rounded px-1.5 py-0.5">
+              <kbd className="text-[10px] font-mono text-txt-muted bg-elevated border border-line rounded px-1.5 py-0.5 shadow-card">
                 /
               </kbd>
             </>
@@ -133,7 +124,7 @@ export function SideNav() {
         <button
           title={collapsed ? "Help" : undefined}
           className={cn(
-            "flex items-center gap-3 h-9 rounded-md text-[13px] text-txt-secondary hover:text-txt-primary hover:bg-surface-1 transition-colors",
+            "flex items-center gap-3 h-8 rounded-md text-[13px] text-txt-secondary hover:text-txt-primary hover:bg-white/[0.03] transition-colors",
             collapsed ? "justify-center px-0" : "px-2.5"
           )}
         >
@@ -145,7 +136,7 @@ export function SideNav() {
           onClick={toggleCollapsed}
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           className={cn(
-            "flex items-center gap-3 h-9 rounded-md text-[13px] text-txt-muted hover:text-txt-primary hover:bg-surface-1 transition-colors mt-1",
+            "flex items-center gap-3 h-8 rounded-md text-[13px] text-txt-muted hover:text-txt-primary hover:bg-white/[0.03] transition-colors mt-1",
             collapsed ? "justify-center px-0" : "px-2.5"
           )}
         >

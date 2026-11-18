@@ -14,7 +14,8 @@ export default function Home() {
     <div className="h-screen flex flex-col overflow-hidden">
       <div className="flex flex-1 overflow-hidden">
         <SideNav />
-        <main className="flex-1 flex flex-col overflow-hidden">
+        {/* Content sits on a raised canvas above the sidebar — the main depth cue. */}
+        <main className="flex-1 flex flex-col overflow-hidden my-2 mr-2 ds-canvas">
           {activeModule === "screener" && <ScreenerModule />}
           {activeModule === "terminal" && <BiasModule />}
           {activeModule === "analytics" && <AnalyticsModule />}

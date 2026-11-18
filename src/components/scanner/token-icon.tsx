@@ -2,26 +2,24 @@
 
 import { useState } from "react";
 
-// ─── Token icon with letter-circle fallback ───
-// Uses the cryptocurrency-icons CDN (public, free, no API key needed).
-// HL k-prefix tokens (KPEPE, KBONK, etc.) strip the leading K to share the
-// base token's icon. If the icon doesn't exist on the CDN, onError swaps to
-// a letter circle automatically.
-//
-// Note: the icon set is opinionated and covers most majors and popular alts.
-// Long-tail HL-only tokens (some memecoins, very new perps) will fallback
-// to the letter circle — that's expected.
+// ─── Token icon: Hyperliquid's own coin art → open-source set → letter ───
+// 1. app.hyperliquid.xyz/coins/<COIN>.svg — covers HL-native coins (HYPE,
+//    PUMP, ASTER…) that generic icon sets miss. Case-sensitive coin name.
+// 2. cryptocurrency-icons (jsDelivr, pinned npm version). The old
+//    gh@1.0.0 path 404'd, which is why every coin showed a letter circle.
+//    HL k-prefix tokens (kPEPE, kBONK) strip the k for this source.
+// 3. Letter circle.
+// Pass the HL coin name (e.g. "kPEPE"); any casing works for the fallbacks.
+// TODO: copy the icons into /public so we don't depend on third-party hosts.
 
-function normalizeForIcon(symbol: string): string {
-  // Strip HL's k-prefix for high-supply tokens
-  let s = symbol.toLowerCase();
-  if (s.startsWith("k") && s.length > 1 && s[1] >= "a" && s[1] <= "z") {
-    s = s.slice(1);
-  }
-  return s;
+const HL_BASE = "https://app.hyperliquid.xyz/coins";
+const OSS_BASE = "https://cdn.jsdelivr.net/npm/cryptocurrency-icons@0.18.1/svg/color";
+
+function ossSlug(symbol: string): string {
+  let s = symbol;
+  if (/^k[A-Z]/.test(s)) s = s.slice(1);
+  return s.toLowerCase();
 }
-
-const CDN_BASE = "https://cdn.jsdelivr.net/gh/atomiclabs/cryptocurrency-icons@1.0.0/svg/color";
 
 interface Props {
   symbol: string;
@@ -29,36 +27,36 @@ interface Props {
 }
 
 export function TokenIcon({ symbol, size = 28 }: Props) {
-  const [failed, setFailed] = useState(false);
-  const slug = normalizeForIcon(symbol);
-  const url = `${CDN_BASE}/${slug}.svg`;
+  const sources = [`${HL_BASE}/${symbol}.svg`, `${OSS_BASE}/${ossSlug(symbol)}.svg`];
+  const [idx, setIdx] = useState(0);
+  const [key, setKey] = useState(symbol);
+  if (key !== symbol) { setKey(symbol); setIdx(0); }
 
-  if (failed) {
+  const ring = "rounded-full shrink-0 ring-1 ring-inset ring-white/[0.08] shadow-[0_1px_2px_rgba(0,0,0,0.5)]";
+
+  if (idx >= sources.length) {
     return (
       <div
-        className="rounded-full bg-elevated border border-border flex items-center justify-center shrink-0"
+        className={`${ring} bg-gradient-to-b from-elevated-2 to-elevated flex items-center justify-center`}
         style={{ width: size, height: size }}
       >
-        <span className="ds-num text-[11px] font-bold text-txt-secondary">
-          {symbol.charAt(0)}
+        <span className="ds-num font-bold text-txt-secondary" style={{ fontSize: Math.max(9, Math.round(size * 0.48)) }}>
+          {symbol.replace(/^k(?=[A-Z])/, "").charAt(0).toUpperCase()}
         </span>
       </div>
     );
   }
 
   return (
-    <div
-      className="rounded-full bg-elevated border border-border flex items-center justify-center shrink-0 overflow-hidden"
-      style={{ width: size, height: size }}
-    >
-      {/* Plain img — no Next/Image, no domain config needed for external CDN */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
+    <div className={`${ring} bg-elevated overflow-hidden`} style={{ width: size, height: size }}>
+      {/* eslint-disable-next-line @next/next/no-img-element -- external icon hosts, tiny images */}
       <img
-        src={url}
+        src={sources[idx]}
         alt={symbol}
         width={size}
         height={size}
-        onError={() => setFailed(true)}
+        loading="lazy"
+        onError={() => setIdx((i) => i + 1)}
         className="w-full h-full object-cover"
       />
     </div>

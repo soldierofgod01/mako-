@@ -9,7 +9,7 @@ import type { MarketStance } from "@/lib/bias/scan";
 import { cn } from "@/lib/utils";
 
 // ════════════════════════════════════════════════════════════════
-// Screener — Orion-scale table: 14px values, 44px rows, wide columns,
+// Screener — dense pro table: 13px values, 36px rows, wide columns,
 // horizontal scroll with the Market column pinned. Two views:
 //   Market      price path, price & OI change across timeframes,
 //               volume, volatility, funding
@@ -43,13 +43,12 @@ interface Col {
   cell: (r: ScreenerRow, ctx: Ctx) => React.ReactNode;
 }
 
-// Screener-only change colours: brighter than the app's emerald so moves
-// pop at a glance, but kept off the brand mint (#33FFA3) so the two greens
-// don't blur together.
-const UP = "text-[#0ECB81]";
-const DN = "text-[#F6465D]";
-const UP_HEX = "#0ECB81";
-const DN_HEX = "#F6465D";
+// Dense-table change colours (--color-up / --color-down): slightly muted so
+// a wall of percentages reads calmly; kept off the brand mint (#33FFA3).
+const UP = "text-up";
+const DN = "text-down";
+const UP_HEX = "#2BBF83";
+const DN_HEX = "#E5566B";
 
 // ─── Formatting ───
 const usd = (x: number) => {
@@ -77,7 +76,7 @@ function Lean({ net, n }: { net: number | null; n: number }) {
   return (
     <span className="inline-flex items-baseline gap-2">
       <span className={p > 10 ? UP : p < -10 ? DN : "text-txt-secondary"}>{p > 10 ? `${p}% L` : p < -10 ? `${-p}% S` : "flat"}</span>
-      <span className="text-txt-muted text-[12px]">{n}</span>
+      <span className="text-txt-muted text-[11.5px]">{n}</span>
     </span>
   );
 }
@@ -91,8 +90,8 @@ function fundingText(r: ScreenerRow, u: FundUnit) {
 }
 
 function Spark({ pts }: { pts: number[] }) {
-  if (pts.length < 3) return <span className="text-txt-dim text-[12px]">building…</span>;
-  const W = 112, H = 30, pad = 2;
+  if (pts.length < 3) return <span className="text-txt-dim text-[11.5px]">building…</span>;
+  const W = 96, H = 22, pad = 2;
   const lo = Math.min(...pts), hi = Math.max(...pts);
   const span = hi - lo || hi * 0.001 || 1;
   const x = (i: number) => (i / (pts.length - 1)) * W;
@@ -105,12 +104,12 @@ function Spark({ pts }: { pts: number[] }) {
     <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="inline-block align-middle">
       <defs>
         <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={c} stopOpacity="0.22" />
+          <stop offset="0%" stopColor={c} stopOpacity="0.18" />
           <stop offset="100%" stopColor={c} stopOpacity="0" />
         </linearGradient>
       </defs>
       <path d={`${line}L${W},${H}L0,${H}Z`} fill={`url(#${id})`} />
-      <path d={line} fill="none" stroke={c} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+      <path d={line} fill="none" stroke={c} strokeWidth="1.25" strokeLinejoin="round" strokeLinecap="round" />
     </svg>
   );
 }
@@ -157,7 +156,7 @@ const COLS: Col[] = [
     cell: (r) => r.liqDistPct == null ? <Dash /> : (
       <span className="inline-flex items-baseline gap-2">
         <span className={r.liqSide === "long" ? "text-warning" : "text-[#60A5FA]"}>{r.liqDistPct > 0 ? "+" : ""}{r.liqDistPct.toFixed(1)}%</span>
-        <span className="text-txt-muted text-[12px]">{usd(r.liqUsd ?? 0)}</span>
+        <span className="text-txt-muted text-[11.5px]">{usd(r.liqUsd ?? 0)}</span>
       </span>
     ),
   },
@@ -264,15 +263,15 @@ export function ScreenerModule() {
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-bg-base">
       {/* Toolbar — title, views, search, funding unit, columns */}
-      <div className="h-16 shrink-0 flex items-center gap-4 xl:gap-6 px-4 xl:px-6 border-b border-border">
-        <span className="hidden lg:block text-[20px] font-semibold tracking-[-0.02em] text-txt-primary">Screener</span>
+      <div className="h-[52px] shrink-0 flex items-center gap-4 xl:gap-6 px-4 xl:px-5 border-b border-line">
+        <span className="hidden lg:block text-[16px] font-semibold tracking-[-0.02em] text-txt-primary">Screener</span>
         <div className="flex items-center h-full gap-5">
           {(["market", "positioning"] as View[]).map((v) => (
             <button
               key={v}
               onClick={() => setViewSaved(v)}
               className={cn(
-                "h-full text-[15px] font-medium capitalize border-b-2 -mb-px transition-colors",
+                "h-full text-[13.5px] font-medium capitalize border-b-2 -mb-px transition-colors",
                 view === v ? "text-txt-primary border-txt-primary" : "text-txt-muted border-transparent hover:text-txt-primary"
               )}
             >
@@ -281,17 +280,17 @@ export function ScreenerModule() {
           ))}
         </div>
         <div className="ml-auto flex items-center gap-2 xl:gap-3 min-w-0">
-          <div className="flex items-center gap-2.5 h-10 px-3.5 rounded-lg border border-border-strong bg-panel w-[180px] xl:w-[280px] min-w-0 focus-within:border-txt-muted">
-            <Search className="w-4 h-4 text-txt-muted shrink-0" />
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search markets" className="flex-1 min-w-0 bg-transparent outline-none text-[14px] text-txt-primary placeholder:text-txt-muted" />
-            <span className="ds-num text-[12.5px] text-txt-muted shrink-0">{rows.length}/{total}</span>
+          <div className="ds-input flex items-center gap-2 h-8 px-2.5 rounded-md w-[180px] xl:w-[260px] min-w-0">
+            <Search className="w-3.5 h-3.5 text-txt-muted shrink-0" />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search markets" className="flex-1 min-w-0 bg-transparent outline-none text-[13px] text-txt-primary placeholder:text-txt-muted" />
+            <span className="ds-num text-[11.5px] text-txt-muted shrink-0">{rows.length}/{total}</span>
           </div>
-          <div className="flex items-center h-10 shrink-0 rounded-lg border border-border-strong p-1" title="Funding rate unit">
+          <div className="ds-seg flex items-center h-8 shrink-0 rounded-md p-[3px]" title="Funding rate unit">
             {(["1h", "8h", "apr"] as FundUnit[]).map((u) => (
               <button
                 key={u}
                 onClick={() => setFundSaved(u)}
-                className={cn("h-full px-3 rounded-md text-[13px] font-medium", fund === u ? "bg-elevated-2 text-txt-primary" : "text-txt-muted hover:text-txt-primary")}
+                className={cn("h-full px-2.5 rounded-[5px] text-[12px] font-medium transition-colors", fund === u ? "ds-seg-on text-txt-primary" : "text-txt-muted hover:text-txt-primary")}
               >
                 {u === "apr" ? "APR" : u}
               </button>
@@ -302,19 +301,19 @@ export function ScreenerModule() {
       </div>
 
       {/* Preset pills */}
-      <div className="h-14 shrink-0 flex items-center gap-2 px-6 border-b border-border overflow-x-auto">
+      <div className="h-11 shrink-0 flex items-center gap-1 px-4 xl:px-5 border-b border-line overflow-x-auto">
         <PresetPill active={preset === "favs"} onClick={() => choosePreset("favs")} hint="Markets you've starred">
           <Star className={cn("w-3.5 h-3.5", preset === "favs" ? "fill-warning text-warning" : "")} />
           Favourites{favs.length ? <span className="text-txt-muted ds-num">{favs.length}</span> : null}
         </PresetPill>
-        <span className="w-px h-5 bg-border mx-1 shrink-0" />
+        <span className="w-px h-4 bg-line mx-1.5 shrink-0" />
         {PRESETS.map((p) => (
           <PresetPill key={p.id} active={preset === p.id} onClick={() => choosePreset(p.id)} hint={p.hint}>{p.label}</PresetPill>
         ))}
       </div>
 
       {(histNote || (view === "positioning" && data?.market?.baseline != null)) && (
-        <div className="shrink-0 px-6 h-10 flex items-center gap-6 border-b border-border text-[13px] text-txt-muted">
+        <div className="shrink-0 px-4 xl:px-5 h-9 flex items-center gap-6 border-b border-line text-[12px] text-txt-muted bg-black/[0.12]">
           {view === "positioning" && data?.market?.baseline != null && (
             <span>
               Market baseline <span className={cn("ds-num font-semibold", data.market.baseline <= -20 ? DN : data.market.baseline >= 20 ? UP : "text-txt-primary")}>{data.market.baseline > 0 ? "+" : ""}{data.market.baseline}</span>
@@ -327,12 +326,12 @@ export function ScreenerModule() {
 
       {/* Table */}
       <div className="flex-1 overflow-auto">
-        <table className="min-w-full border-separate border-spacing-0 ds-num text-[14px]">
-          <thead className="sticky top-0 z-20">
-            <tr className="h-11">
+        <table className="min-w-full border-separate border-spacing-0 ds-num text-[13px]">
+          <thead className="sticky top-0 z-20 shadow-header">
+            <tr className="h-9">
               <th
                 onClick={() => clickSort("coin", "left")}
-                className="sticky left-0 z-30 bg-bg-base border-b border-border min-w-[230px] pl-6 pr-4 text-left text-[12px] font-semibold uppercase tracking-[0.05em] text-txt-muted select-none cursor-pointer hover:text-txt-primary"
+                className="sticky left-0 z-30 bg-elevated border-b border-line min-w-[210px] pl-5 pr-4 text-left text-[11px] font-semibold uppercase tracking-[0.06em] text-txt-muted select-none cursor-pointer hover:text-txt-primary"
               >
                 <span className="inline-flex items-center gap-1.5">Market {sortIcon("coin")}</span>
               </th>
@@ -347,7 +346,7 @@ export function ScreenerModule() {
                   onClick={() => clickSort(c.sort, c.align)}
                   title={c.title ? `${c.title} · drag to reorder` : "Drag to reorder"}
                   className={cn(
-                    "bg-bg-base border-b border-border px-4 text-[12px] font-semibold uppercase tracking-[0.05em] text-txt-muted select-none whitespace-nowrap",
+                    "bg-elevated border-b border-line px-3 text-[11px] font-semibold uppercase tracking-[0.06em] text-txt-muted select-none whitespace-nowrap",
                     c.w,
                     c.align === "right" ? "text-right" : "text-left",
                     c.sort ? "cursor-pointer hover:text-txt-primary" : "cursor-grab",
@@ -361,7 +360,7 @@ export function ScreenerModule() {
                   </span>
                 </th>
               ))}
-              <th className="bg-bg-base border-b border-border w-full" />
+              <th className="bg-elevated border-b border-line w-full" />
             </tr>
           </thead>
           <tbody>
@@ -369,7 +368,7 @@ export function ScreenerModule() {
               <tr><td colSpan={cols.length + 2} className="py-20 text-center text-txt-muted">Couldn&rsquo;t load markets. Retrying…</td></tr>
             ) : isLoading ? (
               Array.from({ length: 14 }).map((_, i) => (
-                <tr key={i} className="h-11"><td colSpan={cols.length + 2} className="px-6 border-b border-border"><div className="h-3.5 w-full skeleton" /></td></tr>
+                <tr key={i} className="h-9"><td colSpan={cols.length + 2} className="px-5 border-b border-border"><div className="h-3 w-full skeleton" /></td></tr>
               ))
             ) : rows.length === 0 ? (
               <tr><td colSpan={cols.length + 2} className="py-20 text-center text-txt-muted">
@@ -379,34 +378,34 @@ export function ScreenerModule() {
               rows.map((r) => {
                 const fav = favs.includes(r.coin);
                 return (
-                  <tr key={r.coin} onClick={() => open(r.coin)} className="group h-11 cursor-pointer">
-                    <td className="sticky left-0 z-10 bg-bg-base group-hover:bg-panel border-b border-border pl-3 pr-4 whitespace-nowrap">
-                      <span className="flex items-center gap-2.5">
+                  <tr key={r.coin} onClick={() => open(r.coin)} className="group h-9 cursor-pointer">
+                    <td className="sticky left-0 z-10 bg-panel group-hover:bg-elevated border-b border-border pl-2.5 pr-4 whitespace-nowrap transition-colors duration-75">
+                      <span className="flex items-center gap-2">
                         <button
                           onClick={(e) => { e.stopPropagation(); toggleFav(r.coin); }}
                           title={fav ? "Remove from favourites" : "Add to favourites"}
-                          className="w-7 h-7 -mr-0.5 flex items-center justify-center rounded hover:bg-elevated"
+                          className="w-6 h-6 flex items-center justify-center rounded hover:bg-elevated-2"
                         >
-                          <Star className={cn("w-4 h-4", fav ? "fill-warning text-warning" : "text-txt-dim group-hover:text-txt-muted")} />
+                          <Star className={cn("w-3.5 h-3.5", fav ? "fill-warning text-warning" : "text-txt-dim group-hover:text-txt-muted")} />
                         </button>
-                        <TokenIcon symbol={r.symbol} size={22} />
-                        <span className="text-[14.5px] font-semibold text-txt-primary">{r.coin}</span>
-                        <span className="px-1.5 py-px rounded bg-elevated text-[11.5px] font-medium text-txt-secondary">{r.maxLeverage}×</span>
+                        <TokenIcon symbol={r.coin} size={18} />
+                        <span className="text-[13.5px] font-semibold text-txt-primary">{r.coin}</span>
+                        <span className="px-1 py-px rounded-[4px] bg-white/[0.04] ring-1 ring-inset ring-white/[0.06] text-[10.5px] font-medium text-txt-muted">{r.maxLeverage}×</span>
                       </span>
                     </td>
                     {cols.map((c) => (
-                      <td key={c.id} className={cn("px-4 border-b border-border whitespace-nowrap group-hover:bg-panel", c.align === "right" ? "text-right" : "text-left")}>
+                      <td key={c.id} className={cn("px-3 border-b border-border whitespace-nowrap group-hover:bg-elevated transition-colors duration-75", c.align === "right" ? "text-right" : "text-left")}>
                         {c.cell(r, { fund })}
                       </td>
                     ))}
-                    <td className="border-b border-border group-hover:bg-panel" />
+                    <td className="border-b border-border group-hover:bg-elevated transition-colors duration-75" />
                   </tr>
                 );
               })
             )}
           </tbody>
         </table>
-        <p className="px-6 py-5 text-[13px] text-txt-muted max-w-[960px] leading-[1.6]">
+        <p className="px-5 py-5 text-[12px] text-txt-muted max-w-[960px] leading-[1.6]">
           Hyperliquid perps with $500K+ daily volume. OI change is measured in contracts (positions), not USD, so price moves don&rsquo;t distort it.
           Positioning uses tracked wallets, not the whole market. Drag column headers to reorder. Click any market to open it in the Terminal.
         </p>
@@ -421,8 +420,8 @@ function PresetPill({ active, onClick, hint, children }: { active: boolean; onCl
       onClick={onClick}
       title={hint}
       className={cn(
-        "h-9 px-4 rounded-full text-[13.5px] font-medium whitespace-nowrap inline-flex items-center gap-1.5 border transition-colors shrink-0",
-        active ? "bg-elevated-2 border-border-strong text-txt-primary" : "border-transparent text-txt-muted hover:text-txt-primary hover:bg-panel"
+        "h-7 px-2.5 rounded-md text-[12.5px] font-medium whitespace-nowrap inline-flex items-center gap-1.5 transition-colors shrink-0",
+        active ? "ds-seg-on text-txt-primary" : "text-txt-muted hover:text-txt-primary hover:bg-white/[0.035]"
       )}
     >
       {children}
@@ -442,23 +441,23 @@ function ColumnPicker({ view, hidden, setHidden, reset }: { view: View; hidden: 
   const optional = COLS.filter((c) => c.optional && (c.view === view || c.view === "both"));
   return (
     <div ref={ref} className="relative">
-      <button onClick={() => setOpen((v) => !v)} title="Columns" className={cn("h-10 w-10 rounded-lg border border-border-strong flex items-center justify-center", open ? "bg-elevated text-txt-primary" : "text-txt-muted hover:text-txt-primary")}>
-        <Columns3 className="w-4 h-4" />
+      <button onClick={() => setOpen((v) => !v)} title="Columns" className={cn("ds-input h-8 w-8 rounded-md flex items-center justify-center", open ? "text-txt-primary" : "text-txt-muted hover:text-txt-primary")}>
+        <Columns3 className="w-3.5 h-3.5" />
       </button>
       {open && (
-        <div className="absolute right-0 top-12 z-50 w-[230px] rounded-xl border border-border-strong bg-elevated shadow-2xl py-2">
+        <div className="absolute right-0 top-10 z-50 w-[220px] ds-float py-1.5 animate-slide-in">
           {optional.length === 0 && <p className="px-4 py-2 text-[13px] text-txt-muted">No optional columns in this view.</p>}
           {optional.map((c) => {
             const isOn = !hidden.includes(c.id);
             return (
-              <button key={c.id} onClick={() => setHidden(isOn ? [...hidden, c.id] : hidden.filter((h) => h !== c.id))} className="w-full flex items-center gap-3 px-4 py-2 text-left text-[14px] hover:bg-white/[0.04]">
-                <span className={cn("w-4 h-4 rounded-[4px] border", isOn ? "bg-accent border-accent" : "border-border-strong")} />
+              <button key={c.id} onClick={() => setHidden(isOn ? [...hidden, c.id] : hidden.filter((h) => h !== c.id))} className="w-full flex items-center gap-2.5 px-3 py-1.5 text-left text-[13px] hover:bg-white/[0.05]">
+                <span className={cn("w-3.5 h-3.5 rounded-[4px] border", isOn ? "bg-accent border-accent" : "border-border-strong bg-black/20")} />
                 <span className="text-txt-primary">{c.label}</span>
               </button>
             );
           })}
-          <div className="mx-4 my-1.5 h-px bg-border" />
-          <button onClick={reset} className="w-full px-4 py-2 text-left text-[13px] text-txt-muted hover:text-txt-primary">Reset order &amp; columns</button>
+          <div className="mx-3 my-1.5 h-px bg-line" />
+          <button onClick={reset} className="w-full px-3 py-1.5 text-left text-[12.5px] text-txt-muted hover:text-txt-primary">Reset order &amp; columns</button>
         </div>
       )}
     </div>
