@@ -112,7 +112,7 @@ export interface OrderflowState {
     interval: ChartInterval;
     candles: Candle[];
     profile: Candle[];
-    delta: { t: number; net: number }[];
+    delta: { t: number; net: number; buy: number; sell: number }[];
     /** "recorded" = history from the 24/7 recorder + live tape; "live" = this tab's tape only. */
     deltaSource: "recorded" | "live";
   } | null;
@@ -181,7 +181,7 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
   const chartCandlesRef = useRef<Candle[]>([]);
   const profileRef = useRef<Candle[]>([]);
   const heatRef = useRef<HeatFrame[]>([]);
-  const flowHistRef = useRef<{ coin: string; interval: string; recorded: boolean; bars: Map<number, number> } | null>(null);
+  const flowHistRef = useRef<{ coin: string; interval: string; recorded: boolean; bars: Map<number, { buy: number; sell: number }> } | null>(null);
   const tickRef = useRef(0);
   const smoothersRef = useRef({ "5m": new BiasSmoother(SMOOTH["5m"]), "15m": new BiasSmoother(SMOOTH["15m"]), "1h": new BiasSmoother(SMOOTH["1h"]) });
 
@@ -641,7 +641,7 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
       coin: d.coin,
       interval: d.interval,
       recorded: d.recorded && d.bars.length > 0,
-      bars: new Map(d.bars.map(([t, buy, sell]) => [t, buy - sell])),
+      bars: new Map(d.bars.map(([t, buy, sell]) => [t, { buy, sell }])),
     };
   }, [flowQuery.data]);
 
@@ -738,11 +738,11 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
         const hist = flowHistRef.current;
         const useHist = !!hist && hist.recorded && hist.coin === coinRef.current && hist.interval === iv;
         const liveStart = trades.length ? Math.ceil(trades[0].t / ivMs) * ivMs : Infinity;
-        const merged = new Map<number, number>();
+        const merged = new Map<number, { buy: number; sell: number }>();
         // Recorded buckets fill anything the tab didn't see (incl. gaps in a restored tape).
-        if (useHist) for (const [t, net] of hist.bars) if (t < liveStart || !deltaMap.has(t)) merged.set(t, net);
-        for (const [t, d] of deltaMap) if (!useHist || t >= liveStart || !merged.has(t)) merged.set(t, d.net);
-        const delta = [...merged.entries()].map(([t, net]) => ({ t, net })).sort((a, b) => a.t - b.t);
+        if (useHist) for (const [t, f] of hist.bars) if (t < liveStart || !deltaMap.has(t)) merged.set(t, f);
+        for (const [t, d] of deltaMap) if (!useHist || t >= liveStart || !merged.has(t)) merged.set(t, { buy: d.buy, sell: d.sell });
+        const delta = [...merged.entries()].map(([t, f]) => ({ t, net: f.buy - f.sell, buy: f.buy, sell: f.sell })).sort((a, b) => a.t - b.t);
         const lastPx = trades.length ? trades[trades.length - 1].px : ctx?.markPx ?? null;
         const whaleMin = whaleThreshold(vol);
 

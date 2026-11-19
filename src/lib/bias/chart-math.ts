@@ -2,48 +2,78 @@
 import type { Candle, Trade } from "@/lib/bias/engine";
 
 /** Session VWAP that resets at each UTC day. Typical price × volume. */
-export function vwapSeries(candles: Candle[]): { t: number; v: number }[] {
-  const out: { t: number; v: number }[] = [];
+/** Daily (UTC) VWAP with its volume-weighted standard deviation for ±σ bands. */
+export function vwapSeries(candles: Candle[]): { t: number; v: number; sd: number }[] {
+  const out: { t: number; v: number; sd: number }[] = [];
   let day = -1;
   let pv = 0;
+  let pv2 = 0;
   let vol = 0;
   for (const c of candles) {
     const d = Math.floor(c.t / 86_400_000);
-    if (d !== day) { day = d; pv = 0; vol = 0; }
+    if (d !== day) { day = d; pv = 0; pv2 = 0; vol = 0; }
     const tp = (c.h + c.l + c.c) / 3;
     pv += tp * c.v;
+    pv2 += tp * tp * c.v;
     vol += c.v;
-    if (vol > 0) out.push({ t: c.t, v: pv / vol });
+    if (vol > 0) {
+      const v = pv / vol;
+      out.push({ t: c.t, v, sd: Math.sqrt(Math.max(0, pv2 / vol - v * v)) });
+    }
   }
   return out;
 }
 
-export interface ProfileBin { lo: number; hi: number; vol: number }
-export interface VolumeProfile { bins: ProfileBin[]; poc: number; vah: number; val: number; total: number }
+export interface ProfileBin { lo: number; hi: number; vol: number; buy: number; sell: number }
+export interface VolumeProfile {
+  bins: ProfileBin[];
+  poc: number;
+  vah: number;
+  val: number;
+  total: number;
+  /** Share of volume whose buy/sell split is measured (recorded aggressor flow) vs estimated from the candle. */
+  measured: number;
+}
+
+/** Buy share of a candle without tape data: where it closed in its range (close-location value). */
+function estBuyShare(c: Candle) {
+  if (!(c.h > c.l)) return 0.5;
+  return Math.min(1, Math.max(0, (c.c - c.l) / (c.h - c.l)));
+}
 
 /**
  * Volume profile from 1m candles: each candle's volume is spread evenly
  * across the price range it traded. An approximation (true profiles need
  * tick data), but standard for candle-based profiles. Value area = 70%.
  */
-export function volumeProfile(candles: Candle[], nBins = 48): VolumeProfile | null {
+export function volumeProfile(
+  candles: Candle[],
+  nBins = 48,
+  flow?: Map<number, { buy: number; sell: number }>
+): VolumeProfile | null {
   const cs = candles.filter((c) => c.v > 0 && c.h >= c.l && c.l > 0);
   if (cs.length < 5) return null;
-  const lo = Math.min(...cs.map((c) => c.l));
-  const hi = Math.max(...cs.map((c) => c.h));
+  let lo = Infinity, hi = -Infinity;
+  for (const c of cs) { if (c.l < lo) lo = c.l; if (c.h > hi) hi = c.h; }
   if (!(hi > lo)) return null;
   const step = (hi - lo) / nBins;
-  const bins: ProfileBin[] = Array.from({ length: nBins }, (_, i) => ({ lo: lo + i * step, hi: lo + (i + 1) * step, vol: 0 }));
+  const bins: ProfileBin[] = Array.from({ length: nBins }, (_, i) => ({ lo: lo + i * step, hi: lo + (i + 1) * step, vol: 0, buy: 0, sell: 0 }));
+  let measuredVol = 0;
   for (const c of cs) {
+    const f = flow?.get(c.t);
+    const fTot = f ? f.buy + f.sell : 0;
+    const bs = fTot > 0 ? f!.buy / fTot : estBuyShare(c);
+    if (fTot > 0) measuredVol += c.v;
+    const add = (i: number, v: number) => { bins[i].vol += v; bins[i].buy += v * bs; bins[i].sell += v * (1 - bs); };
     if (c.h === c.l) {
-      bins[Math.min(nBins - 1, Math.floor((c.c - lo) / step))].vol += c.v;
+      add(Math.min(nBins - 1, Math.floor((c.c - lo) / step)), c.v);
       continue;
     }
     const a = Math.max(0, Math.floor((c.l - lo) / step));
     const b = Math.min(nBins - 1, Math.floor((c.h - lo) / step));
     for (let i = a; i <= b; i++) {
       const overlap = Math.min(c.h, bins[i].hi) - Math.max(c.l, bins[i].lo);
-      if (overlap > 0) bins[i].vol += (c.v * overlap) / (c.h - c.l);
+      if (overlap > 0) add(i, (c.v * overlap) / (c.h - c.l));
     }
   }
   const total = bins.reduce((s, b) => s + b.vol, 0);
@@ -64,6 +94,7 @@ export function volumeProfile(candles: Candle[], nBins = 48): VolumeProfile | nu
     vah: bins[up].hi,
     val: bins[dn].lo,
     total,
+    measured: total > 0 ? Math.min(1, measuredVol / cs.reduce((s, c) => s + c.v, 0)) : 0,
   };
 }
 

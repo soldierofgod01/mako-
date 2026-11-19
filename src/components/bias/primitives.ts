@@ -147,33 +147,88 @@ export class HeatmapLayer extends Layer {
 
 // ─── Volume profile (session, right edge of the price pane) ──────
 export class ProfileLayer extends Layer {
-  bins: { lo: number; hi: number; vol: number }[] = [];
+  bins: { lo: number; hi: number; vol: number; buy: number; sell: number }[] = [];
   poc = 0;
   vah = 0;
   val = 0;
-  width = 90;
+  /** Share of the pane width the longest row takes. */
+  widthFrac = 0.22;
   private view = new View("normal", (target) => this.drawProfile(target));
   paneViews() { return this.enabled ? [this.view] : []; }
 
+  // Rows are split buy (left part, green) | sell (right part, red), anchored to the
+  // right edge. Value area brighter, outside dimmer, POC row brightest.
   private drawProfile(target: Target) {
     const s = this.series;
     if (!s || !this.bins.length) return;
-    const maxV = Math.max(...this.bins.map((b) => b.vol), 1);
+    let maxV = 1;
+    for (const b of this.bins) if (b.vol > maxV) maxV = b.vol;
     target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
-      const right = mediaSize.width;
+      const right = mediaSize.width - 2;
+      const maxW = mediaSize.width * this.widthFrac;
       for (const b of this.bins) {
         const ya = s.priceToCoordinate(b.hi);
         const yb = s.priceToCoordinate(b.lo);
         if (ya == null || yb == null) continue;
         const top = Math.min(ya, yb);
-        const h = Math.max(1, Math.abs(yb - ya) - 1);
+        const h = Math.max(1, Math.abs(yb - ya) - (Math.abs(yb - ya) > 3 ? 1 : 0));
         if (top > mediaSize.height || top + h < 0) continue;
-        const w = (b.vol / maxV) * this.width;
+        const w = (b.vol / maxV) * maxW;
+        if (w < 0.5) continue;
         const mid = (b.lo + b.hi) / 2;
         const isPoc = this.poc >= b.lo && this.poc <= b.hi;
-        ctx.fillStyle = isPoc ? "rgba(51,255,163,0.5)" : mid >= this.val && mid <= this.vah ? "rgba(155,155,160,0.3)" : "rgba(155,155,160,0.13)";
-        ctx.fillRect(right - w, top, w, h);
+        const inVa = mid >= this.val && mid <= this.vah;
+        const a = isPoc ? 0.62 : inVa ? 0.36 : 0.15;
+        const wb = b.vol > 0 ? w * (b.buy / b.vol) : 0;
+        ctx.fillStyle = `rgba(31,184,128,${a})`;
+        ctx.fillRect(right - w, top, wb, h);
+        ctx.fillStyle = `rgba(239,68,68,${a})`;
+        ctx.fillRect(right - w + wb, top, w - wb, h);
+        if (isPoc) {
+          ctx.fillStyle = "rgba(237,237,239,0.85)";
+          ctx.fillRect(right - w, top, 1.5, h);
+        }
       }
+    });
+  }
+}
+
+// ─── Band fill (VWAP ±1σ) ────────────────────────────────────────
+export class BandLayer extends Layer {
+  points: { t: number; lo: number; hi: number }[] = [];
+  color = "rgba(224,179,65,0.06)";
+  private view = new View("bottom", (target) => this.drawBand(target));
+  paneViews() { return this.enabled ? [this.view] : []; }
+
+  private drawBand(target: Target) {
+    const tm = this.timeMap();
+    const s = this.series;
+    if (!tm || !s || this.points.length < 2) return;
+    target.useMediaCoordinateSpace(({ context: ctx }) => {
+      // One polygon per UTC day (VWAP resets daily — don't bridge the gap).
+      let seg: { x: number; lo: number; hi: number }[] = [];
+      let day = -1;
+      const flush = () => {
+        if (seg.length > 1) {
+          ctx.beginPath();
+          seg.forEach((p, i) => (i ? ctx.lineTo(p.x, p.hi) : ctx.moveTo(p.x, p.hi)));
+          for (let i = seg.length - 1; i >= 0; i--) ctx.lineTo(seg[i].x, seg[i].lo);
+          ctx.closePath();
+          ctx.fillStyle = this.color;
+          ctx.fill();
+        }
+        seg = [];
+      };
+      for (const p of this.points) {
+        const d = Math.floor(p.t / 86_400_000);
+        if (d !== day) { flush(); day = d; }
+        const x = tm.barX(p.t);
+        const yh = s.priceToCoordinate(p.hi);
+        const yl = s.priceToCoordinate(p.lo);
+        if (x == null || yh == null || yl == null) continue;
+        seg.push({ x, lo: yl, hi: yh });
+      }
+      flush();
     });
   }
 }
