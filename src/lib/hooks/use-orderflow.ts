@@ -248,6 +248,44 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
     }
   }
 
+  // ── Display book: REST poll every 500ms while visible ──────────
+  // Measured Nov 2026: HL's WS l2Book pushes a snapshot only every ~10s,
+  // while REST returns a fresh book on every call. Weight 2 per call →
+  // ~240/min of HL's 1200/min per-IP budget, and only while the tab is shown.
+  useEffect(() => {
+    let stop = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const ctrl = new AbortController();
+    const poll = async () => {
+      if (stop) return;
+      if (document.visibilityState === "visible") {
+        try {
+          const res = await fetch("https://api.hyperliquid.xyz/info", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ type: "l2Book", coin, nSigFigs: DISPLAY_SIG }),
+            signal: ctrl.signal,
+          });
+          if (res.ok) {
+            const d = (await res.json()) as { coin?: string; time?: number; levels?: { px: string; sz: string }[][] };
+            if (!stop && d?.coin === coin && Array.isArray(d.levels) && d.levels[0]?.length && d.levels[1]?.length) {
+              const toLive = (l: { px: string; sz: string }) => ({ px: parseFloat(l.px), sz: parseFloat(l.sz) });
+              lastDisplayBookRef.current = Date.now();
+              live.setBook({ t: d.time ?? Date.now(), bids: d.levels[0].map(toLive), asks: d.levels[1].map(toLive), sigFigs: DISPLAY_SIG });
+            }
+          }
+        } catch { /* network blip or abort — WS book is the fallback */ }
+      }
+      if (!stop) timer = setTimeout(poll, 500);
+    };
+    poll();
+    return () => {
+      stop = true;
+      ctrl.abort();
+      if (timer) clearTimeout(timer);
+    };
+  }, [coin, live]);
+
   // ── Wallet cohorts: slow (server refreshes every 3 min) ──────────
   const cohortQuery = useQuery({
     queryKey: ["bias-cohorts", coin],

@@ -51,6 +51,8 @@ export class LiveFeed {
   getVersion = () => this.version;
 
   setBook(book: LiveBook) {
+    // REST poll and WS both write here; never let an older snapshot win.
+    if (this.book && book.t < this.book.t) return;
     this.book = book;
     this.emit();
   }
