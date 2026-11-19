@@ -107,6 +107,8 @@ export interface OrderflowState {
   restored: { minutes: number; gapSec: number } | null;
   layers: { heat: HeatFrame[]; tape: Trade[]; tick: number } | null;
   chart: {
+    /** Coin these candles belong to — guards against a stale coin after a switch. */
+    coin: string;
     interval: ChartInterval;
     candles: Candle[];
     profile: Candle[];
@@ -770,7 +772,7 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
           restored: restoredRef.current,
           layers: { heat: heatRef.current, tape: trades, tick: ++tickRef.current },
           chart: chartCandles.length
-            ? { interval: iv, candles: chartCandles.slice(), profile: profileRef.current, delta, deltaSource: useHist ? "recorded" : "live" }
+            ? { coin: coinRef.current, interval: iv, candles: chartCandles.slice(), profile: profileRef.current, delta, deltaSource: useHist ? "recorded" : "live" }
             : null,
         });
       } catch {

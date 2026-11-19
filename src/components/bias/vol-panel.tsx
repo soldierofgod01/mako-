@@ -12,6 +12,8 @@ import { cn } from "@/lib/utils";
 
 const usd = (x: number) => fmtUsd(x).replace("+", "");
 const pts = (x: number) => `${x > 0 ? "+" : x < 0 ? "−" : ""}${Math.abs(x).toFixed(1)}`;
+/** Strikes without trailing zeros (78, 1.35, 64,000). */
+const fmtStrike = (k: number) => (k >= 1000 ? k.toLocaleString("en-US", { maximumFractionDigits: 0 }) : String(+k.toPrecision(6)));
 const fmtExp = (ms: number) => new Date(ms).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
 
 type Tone = "pos" | "neg" | "warn" | undefined;
@@ -92,8 +94,8 @@ export function VolPanel({ vol, px }: { vol: VolState; px: number | null }) {
     const longGamma = s.totalGex >= 0;
     tiles.push({
       label: "Dealer gamma",
-      value: longGamma ? "Long gamma" : "Short gamma",
-      sub: `${usd(Math.abs(s.totalGex))} per 1% · flip ${s.flip ? fmtPrice(s.flip) : "outside ±15%"}`,
+      value: longGamma ? "Long" : "Short",
+      sub: `${usd(Math.abs(s.totalGex))} per 1% · flip ${s.flip ? fmtStrike(+s.flip.toPrecision(5)) : "outside ±15%"}`,
       tone: longGamma ? "pos" : "neg",
       read: longGamma
         ? "Dealer hedging leans against moves — expect dampened, range-bound price."
@@ -103,7 +105,7 @@ export function VolPanel({ vol, px }: { vol: VolState; px: number | null }) {
       const dist = ((s.maxPain.strike - spot) / spot) * 100;
       tiles.push({
         label: `Max pain · ${fmtExp(s.maxPain.expiry)}`,
-        value: fmtPrice(s.maxPain.strike),
+        value: fmtStrike(s.maxPain.strike),
         sub: `${dist > 0 ? "+" : ""}${dist.toFixed(1)}% from price`,
         read: "Strike where most options expire worthless. Pull matters most in the final day.",
       });
@@ -176,7 +178,7 @@ function GexBars({ vol, spot }: { vol: VolState; spot: number }) {
               </div>
             )}
             <div className="grid grid-cols-[64px_1fr_52px] items-center h-[17px] gap-1.5 ds-num text-[10.5px]">
-              <span className={cn("text-right", s.flip && Math.abs(r.strike - s.flip) / spot < 0.004 ? "text-warning" : "text-txt-secondary")}>{fmtPrice(r.strike)}</span>
+              <span className={cn("text-right", s.flip && Math.abs(r.strike - s.flip) / spot < 0.004 ? "text-warning" : "text-txt-secondary")}>{fmtStrike(r.strike)}</span>
               <div className="relative h-2">
                 <div className="absolute inset-y-0 left-1/2 w-px bg-border-strong" />
                 <div

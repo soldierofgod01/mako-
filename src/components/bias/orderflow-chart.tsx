@@ -124,7 +124,7 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
   const [hoverT, setHoverT] = useState<number | null>(null);
   const [paneTops, setPaneTops] = useState<{ delta: number | null; vol: number | null }>({ delta: null, vol: null });
 
-  const chart = of.chart && of.chart.interval === interval ? of.chart : null;
+  const chart = of.chart && of.chart.interval === interval && of.chart.coin === coin ? of.chart : null;
   const showLower = on(indicators.delta) || on(indicators.cvd);
   const showVolPane = on(indicators.dvol) || on(indicators.rv);
 
@@ -324,7 +324,8 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
     const cs = candleRef.current;
     if (!cs) return;
     const s = vol?.surface;
-    const px = of.lastPx ?? s?.spot ?? 0;
+    // Right after a coin switch lastPx can still be the old coin's; trust the chain's spot then.
+    const px = s && of.lastPx && Math.abs(of.lastPx - s.spot) / s.spot < 0.2 ? of.lastPx : s?.spot ?? 0;
     const levels = on(indicators.gex) && s && px > 0
       ? s.gex.filter((g) => Math.abs(g.strike - px) / px <= 0.1).sort((a, b) => Math.abs(b.gex) - Math.abs(a.gex)).slice(0, 4)
       : [];
@@ -360,7 +361,7 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
       vwapRef.current?.applyOptions({ priceFormat: fmt });
     }
 
-    const key = `${chart.interval}|${k[0].t}|${k.length}`;
+    const key = `${chart.coin}|${chart.interval}|${k[0].t}|${k.length}`;
     try {
       const volBar = (c: typeof last) => ({ time: ts(c.t), value: c.v * c.c, color: c.c >= c.o ? UP_VOL : DOWN_VOL });
       if (key === dataKeyRef.current) {
