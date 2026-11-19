@@ -60,7 +60,7 @@ export function OrderBookPanel({ feed, coin, whaleMin }: { feed: LiveFeed; coin:
   };
 
   return (
-    <section className="ds-card-panel flex flex-col overflow-hidden min-h-0">
+    <section className="ds-card-panel flex-1 flex flex-col overflow-hidden min-h-0">
       <div className="h-9 shrink-0 flex items-center gap-1 px-2 border-b border-border">
         <TabBtn active={tab === "book"} onClick={() => pickTab("book")}>Order book</TabBtn>
         <TabBtn active={tab === "trades"} onClick={() => pickTab("trades")}>Trades</TabBtn>
