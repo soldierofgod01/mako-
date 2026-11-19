@@ -91,16 +91,23 @@ export function VolPanel({ vol, px }: { vol: VolState; px: number | null }) {
         read: s.putCallOi > 1.1 ? "More puts than calls open — positioned defensively." : s.putCallOi < 0.7 ? "Call-heavy — positioned for upside." : "Roughly balanced positioning.",
       });
     }
-    const longGamma = s.totalGex >= 0;
-    tiles.push({
-      label: "Dealer gamma",
-      value: longGamma ? "Long" : "Short",
-      sub: `${usd(Math.abs(s.totalGex))} per 1% · flip ${s.flip ? fmtStrike(+s.flip.toPrecision(5)) : "outside ±15%"}`,
-      tone: longGamma ? "pos" : "neg",
-      read: longGamma
-        ? "Dealer hedging leans against moves — expect dampened, range-bound price."
-        : "Dealer hedging chases moves — expect moves to extend.",
-    });
+    // Dealer long/short gamma is NOT shown: tested Nov 2026, the usual "customers buy puts,
+    // sell calls" assumption was ~50/50 on Deribit and backwards on near-dated flow. Only the
+    // unsigned concentration (straight from open interest) is shown until tape-based
+    // positioning exists.
+    if (spot) {
+      const near = s.gex.filter((g) => Math.abs(g.strike - spot) / spot <= 0.1).sort((a, b) => b.abs - a.abs);
+      const top = near[0];
+      if (top) {
+        const dist = ((top.strike - spot) / spot) * 100;
+        tiles.push({
+          label: "Gamma concentration",
+          value: fmtStrike(top.strike),
+          sub: `${usd(top.abs)} per 1% · ${dist > 0 ? "+" : ""}${dist.toFixed(1)}% from price`,
+          read: "Strike with the most option gamma near price — where hedging flows are heaviest.",
+        });
+      }
+    }
     if (s.maxPain && spot) {
       const dist = ((s.maxPain.strike - spot) / spot) * 100;
       tiles.push({
@@ -151,15 +158,15 @@ function CoverageLine({ vol }: { vol: VolState }) {
   );
 }
 
-/** Dealer gamma by strike near price: + (dampening) right, − (amplifying) left. */
+/** Option gamma by strike near price (calls + puts, no dealer direction assumed). */
 function GexBars({ vol, spot }: { vol: VolState; spot: number }) {
   const s = vol.surface!;
-  const near = s.gex.filter((g) => Math.abs(g.strike - spot) / spot <= 0.1 && g.gex !== 0);
+  const near = s.gex.filter((g) => Math.abs(g.strike - spot) / spot <= 0.1 && g.abs > 0);
   const rows = near
-    .sort((a, b) => Math.abs(b.gex) - Math.abs(a.gex))
+    .sort((a, b) => b.abs - a.abs)
     .slice(0, 14)
     .sort((a, b) => b.strike - a.strike);
-  const max = Math.max(...rows.map((r) => Math.abs(r.gex)), 1);
+  const max = Math.max(...rows.map((r) => r.abs), 1);
   const spotIdx = rows.findIndex((r) => r.strike < spot);
   return (
     <div className="w-[260px] shrink-0 rounded-[10px] bg-void border border-border px-3 py-2.5 flex flex-col">
@@ -178,22 +185,18 @@ function GexBars({ vol, spot }: { vol: VolState; spot: number }) {
               </div>
             )}
             <div className="grid grid-cols-[64px_1fr_52px] items-center h-[17px] gap-1.5 ds-num text-[10.5px]">
-              <span className={cn("text-right", s.flip && Math.abs(r.strike - s.flip) / spot < 0.004 ? "text-warning" : "text-txt-secondary")}>{fmtStrike(r.strike)}</span>
+              <span className="text-right text-txt-secondary">{fmtStrike(r.strike)}</span>
               <div className="relative h-2">
-                <div className="absolute inset-y-0 left-1/2 w-px bg-border-strong" />
-                <div
-                  className={cn("absolute inset-y-0 rounded-sm", r.gex >= 0 ? "bg-positive/70" : "bg-negative/70")}
-                  style={r.gex >= 0 ? { left: "50%", width: `${(r.gex / max) * 50}%` } : { right: "50%", width: `${(-r.gex / max) * 50}%` }}
-                />
+                <div className="absolute inset-y-0 left-0 rounded-sm bg-[#A78BFA]/60" style={{ width: `${(r.abs / max) * 100}%` }} />
               </div>
-              <span className="text-right text-txt-muted">{usd(Math.abs(r.gex))}</span>
+              <span className="text-right text-txt-muted">{usd(r.abs)}</span>
             </div>
           </div>
         ))}
         {rows.length === 0 && <span className="text-[11.5px] text-txt-muted mt-1">No meaningful gamma near price.</span>}
       </div>
       <p className="mt-auto pt-2 text-[10.5px] text-txt-dim leading-[1.4]">
-        Assumes customers buy puts and sell calls, so dealers are long calls and short puts (the industry convention). Real positioning isn&rsquo;t public.
+        Gamma from open interest, calls and puts combined. Which side dealers hold isn&rsquo;t public, so no direction is shown.
       </p>
     </div>
   );

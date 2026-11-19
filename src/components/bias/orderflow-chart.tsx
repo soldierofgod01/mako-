@@ -60,7 +60,7 @@ const ALL_INDICATORS: { id: IndicatorId; label: string; desc: string }[] = [
   { id: "cvd", label: "CVD", desc: "Cumulative volume delta · history on the top 20 coins" },
   { id: "dvol", label: "DVOL", desc: "Deribit 30-day implied vol index · BTC and ETH" },
   { id: "rv", label: "Realised vol", desc: "Rolling 30-bar realised vol, annualised · every coin" },
-  { id: "gex", label: "Gamma levels", desc: "Gamma flip + biggest dealer-gamma strikes · Deribit options" },
+  { id: "gex", label: "Gamma strikes", desc: "Strikes with the most option gamma near price · Deribit options" },
 ];
 
 // Parked Nov 2026: browser-only tape/book made these far weaker than dedicated
@@ -327,21 +327,18 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
     // Right after a coin switch lastPx can still be the old coin's; trust the chain's spot then.
     const px = s && of.lastPx && Math.abs(of.lastPx - s.spot) / s.spot < 0.2 ? of.lastPx : s?.spot ?? 0;
     const levels = on(indicators.gex) && s && px > 0
-      ? s.gex.filter((g) => Math.abs(g.strike - px) / px <= 0.1).sort((a, b) => Math.abs(b.gex) - Math.abs(a.gex)).slice(0, 4)
+      ? s.gex.filter((g) => Math.abs(g.strike - px) / px <= 0.1).sort((a, b) => b.abs - a.abs).slice(0, 4)
       : [];
-    const flip = on(indicators.gex) && s?.flip ? s.flip : null;
-    const key = JSON.stringify([flip?.toPrecision(6), levels.map((l) => `${l.strike}${l.gex > 0 ? "+" : "-"}`)]);
+    const key = JSON.stringify(levels.map((l) => l.strike));
     if (key === gexKeyRef.current) return;
     gexKeyRef.current = key;
     for (const l of gexLinesRef.current) { try { cs.removePriceLine(l); } catch { /* ignore */ } }
     gexLinesRef.current = [];
-    if (flip) {
-      gexLinesRef.current.push(cs.createPriceLine({ price: flip, color: "rgba(245,158,11,0.8)", lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: "γ flip" }));
-    }
+    // No flip line and no +/− colouring: dealer direction is unknown (see vol-panel).
     for (const l of levels) {
       gexLinesRef.current.push(cs.createPriceLine({
-        price: l.strike, color: l.gex > 0 ? "rgba(31,184,128,0.5)" : "rgba(239,68,68,0.5)",
-        lineWidth: 1, lineStyle: LineStyle.SparseDotted, axisLabelVisible: false, title: l.gex > 0 ? "+γ" : "−γ",
+        price: l.strike, color: "rgba(167,139,250,0.6)",
+        lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: false, title: "γ",
       }));
     }
   }, [vol?.surface, of.lastPx, indicators.gex]);
@@ -539,7 +536,7 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
       case "gex": {
         const s = vol?.surface;
         if (!s) return vol?.coverage === "none" ? `no listed ${coin} options` : "loading";
-        return `${s.totalGex >= 0 ? "long" : "short"} γ · flip ${s.flip ? s.flip.toPrecision(6).replace(/\.?0+$/, "") : "none ±15%"}`;
+        return "top 4 within ±10%";
       }
       default: return "";
     }

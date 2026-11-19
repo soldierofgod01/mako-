@@ -81,7 +81,8 @@ export interface ExpiryPoint {
 
 export interface GexLevel {
   strike: number;
-  gex: number; // $ per 1% move (dealer view: +calls −puts)
+  gex: number; // $ per 1% move, signed by convention (+calls −puts) — NOT shown in the UI (Nov 2026)
+  abs: number; // $ per 1% move, calls + puts — gamma concentration, no direction assumed
 }
 
 export interface VolSurface {
@@ -213,14 +214,17 @@ export function buildSurface(rows: OptionRow[], spotIn: number | null, now = Dat
   for (const r of live) (r.type === "C" ? (callOi += r.oi) : (putOi += r.oi));
 
   // GEX per strike at today's spot
-  const byStrike = new Map<number, number>();
+  const byStrike = new Map<number, { gex: number; abs: number }>();
   for (const r of live) {
     const T = (r.expiry - now) / YEAR_MS;
     if (r.oi <= 0) continue;
     const g = bsGamma(spot, r.strike, r.iv, T) * r.oi * spot * spot * 0.01;
-    byStrike.set(r.strike, (byStrike.get(r.strike) ?? 0) + (r.type === "C" ? g : -g));
+    const cur = byStrike.get(r.strike) ?? { gex: 0, abs: 0 };
+    cur.gex += r.type === "C" ? g : -g;
+    cur.abs += g;
+    byStrike.set(r.strike, cur);
   }
-  const gex = [...byStrike.entries()].map(([strike, g]) => ({ strike, gex: g })).sort((a, b) => a.strike - b.strike);
+  const gex = [...byStrike.entries()].map(([strike, v]) => ({ strike, ...v })).sort((a, b) => a.strike - b.strike);
   const totalGex = gex.reduce((s, x) => s + x.gex, 0);
 
   // Gamma flip: where total dealer gamma changes sign as spot moves (±15%).
