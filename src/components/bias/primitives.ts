@@ -196,7 +196,7 @@ export class ProfileLayer extends Layer {
 // ─── Band fill (VWAP ±1σ) ────────────────────────────────────────
 export class BandLayer extends Layer {
   points: { t: number; lo: number; hi: number }[] = [];
-  color = "rgba(224,179,65,0.06)";
+  color = "rgba(224,179,65,0.04)";
   private view = new View("bottom", (target) => this.drawBand(target));
   paneViews() { return this.enabled ? [this.view] : []; }
 
