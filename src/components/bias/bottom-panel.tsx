@@ -24,7 +24,7 @@ const TABS: { id: TabId; label: string }[] = [
 ];
 const MIN_H = 140;
 const MAX_H = 460;
-const DEFAULT_H = 240;
+const DEFAULT_H = 280;
 const usd = (x: number) => fmtUsd(x).replace("+", "");
 
 export function BottomPanel({ of, vol }: { of: OrderflowState; vol: VolState }) {
