@@ -19,6 +19,7 @@ import { restore, saveMemory, saveStorage, type CvdPoint, type TapeState } from 
 import { candleDelta } from "@/lib/bias/chart-math";
 import { BiasSmoother, SMOOTH, applySmoothing } from "@/lib/bias/smooth";
 import type { HeatFrame } from "@/lib/bias/footprint";
+import { LiveFeed, type LiveTrade } from "@/lib/bias/live-feed";
 
 const HEAT_KEEP_MS = 45 * 60_000;
 
@@ -49,6 +50,17 @@ const TAPE_KEEP_MS = 65 * 60_000; // 1h horizon needs a full hour
 const BOOK_KEEP_MS = 15 * 60_000;
 const CTX_KEEP_MS = 90 * 60_000;
 const CVD_BUCKET_MS = 5_000;
+/** The order book column shows HL's finest aggregation (5 significant figures). */
+const DISPLAY_SIG = 5;
+
+/** HL aggregation tick for one level at `sig` significant figures. */
+function levelTick(px: number, sig: number) {
+  return Math.pow(10, Math.floor(Math.log10(px)) - sig + 1);
+}
+function onGrid(px: number, sig: number) {
+  const r = px / levelTick(px, sig);
+  return Math.abs(r - Math.round(r)) < 1e-6;
+}
 
 export interface BiasCtx {
   markPx: number;
@@ -140,8 +152,12 @@ const EMPTY: OrderflowState = {
   chart: null,
 };
 
-export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m"): OrderflowState {
+export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m"): OrderflowState & { live: LiveFeed } {
   const [state, setState] = useState<OrderflowState>(EMPTY);
+  const liveRef = useRef<LiveFeed | null>(null);
+  if (!liveRef.current) liveRef.current = new LiveFeed();
+  const live = liveRef.current;
+  const lastDisplayBookRef = useRef(0);
 
   const tradesRef = useRef<Trade[]>([]);
   const bookRef = useRef<BookSample[]>([]);
@@ -227,6 +243,9 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
       method: "subscribe",
       subscription: { type: "l2Book", coin: coinRef.current, nSigFigs: heatSig(sigFigsRef.current) },
     });
+    if (sigFigsRef.current < DISPLAY_SIG) {
+      send({ method: "subscribe", subscription: { type: "l2Book", coin: coinRef.current, nSigFigs: DISPLAY_SIG } });
+    }
   }
 
   // ── Wallet cohorts: slow (server refreshes every 3 min) ──────────
@@ -252,6 +271,7 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
       if (prevSig !== null) {
         send({ method: "unsubscribe", subscription: { type: "l2Book", coin: prev, nSigFigs: prevSig } });
         send({ method: "unsubscribe", subscription: { type: "l2Book", coin: prev, nSigFigs: heatSig(prevSig) } });
+        if (prevSig < DISPLAY_SIG) send({ method: "unsubscribe", subscription: { type: "l2Book", coin: prev, nSigFigs: DISPLAY_SIG } });
       }
     }
     if (prev !== coin && tradesRef.current.length) {
@@ -264,6 +284,8 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
     for (const sm of Object.values(smoothersRef.current)) sm.reset();
     lastBookRef.current = null;
     lastImbRef.current = null;
+    lastDisplayBookRef.current = 0;
+    live.reset();
     candlesRef.current = [];
     chartCandlesRef.current = [];
     profileRef.current = [];
@@ -318,12 +340,15 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
     function onTrades(data: unknown) {
       if (!Array.isArray(data)) return;
       const buf = tradesRef.current;
+      const liveBatch: LiveTrade[] = [];
       for (const raw of data as { coin: string; side: string; px: string; sz: string; time: number }[]) {
         if (raw?.coin !== coinRef.current) continue;
         const px = parseFloat(raw.px);
         const sz = parseFloat(raw.sz);
         if (!(px > 0) || !(sz > 0)) continue;
         const side: 1 | -1 = raw.side === "B" ? 1 : -1;
+        // The tape shows HL's replay of recent trades too, so it's full from the first second.
+        liveBatch.push({ key: `${raw.time}|${px}|${sz}|${raw.side}`, t: raw.time, px, sz, usd: px * sz, side });
         const dk = dedupeRef.current;
         if (dk.size) {
           const k = `${raw.time}|${px}|${sz}`;
@@ -351,6 +376,7 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
           cvd.push({ time, cvd: cvdTotalRef.current, px });
         }
       }
+      if (liveBatch.length) live.pushTrades(liveBatch);
       const cut = Date.now() - TAPE_KEEP_MS;
       while (buf.length && buf[0].t < cut) buf.shift();
       const cvd = cvdRef.current;
@@ -368,8 +394,21 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
       const mid = (bestBid + bestAsk) / 2;
       if (!(mid > 0)) return;
 
-      // Two book subscriptions share this channel; tell them apart by level spacing.
       const fine = sigFigsRef.current;
+      const toLive = (l: { px: string; sz: string }) => ({ px: parseFloat(l.px), sz: parseFloat(l.sz) });
+
+      // Display book (5 sig figs) — the only subscription with levels off the
+      // engine's grid. It feeds the order book column and nothing else.
+      if (fine !== null && fine < DISPLAY_SIG) {
+        const sample = [...bidsRaw.slice(0, 10), ...asksRaw.slice(0, 10)];
+        if (sample.some((l) => !onGrid(parseFloat(l.px), fine))) {
+          lastDisplayBookRef.current = Date.now();
+          live.setBook({ t: d.time ?? Date.now(), bids: bidsRaw.map(toLive), asks: asksRaw.map(toLive), sigFigs: DISPLAY_SIG });
+          return;
+        }
+      }
+
+      // Two engine subscriptions share this channel; tell them apart by level spacing.
       if (fine !== null && bidsRaw.length > 1) {
         // Min gap between adjacent levels = the aggregation tick (gaps only make spacing bigger).
         let spacing = Infinity;
@@ -394,6 +433,11 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
           }
           return; // coarse book feeds the heatmap only
         }
+      }
+
+      // Engine book doubles as the display book until (or unless) the finer one arrives.
+      if (fine !== null && Date.now() - lastDisplayBookRef.current > 3000) {
+        live.setBook({ t: d.time ?? Date.now(), bids: bidsRaw.map(toLive), asks: asksRaw.map(toLive), sigFigs: fine });
       }
 
       const toLv = (l: { px: string; sz: string }) => {
@@ -673,5 +717,5 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
     return () => clearInterval(id);
   }, []);
 
-  return state;
+  return { ...state, live };
 }

@@ -1,19 +1,28 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { BarChart3, Check, ChevronDown, PanelRight, Search } from "lucide-react";
+import { BarChart3, Check, ChevronDown, Search } from "lucide-react";
+import { CaretRight, Info, SidebarSimple } from "@phosphor-icons/react";
 import { useAppStore } from "@/stores/app-store";
 import { useOrderflow, CHART_INTERVALS, type ChartInterval, type OrderflowState } from "@/lib/hooks/use-orderflow";
 import { DEFAULT_INDICATORS, INDICATORS, OrderflowChart, PARKED_INDICATORS, type Indicators } from "./orderflow-chart";
+import { OrderBookPanel } from "./order-book";
+import { BottomPanel } from "./bottom-panel";
 import { TokenIcon } from "@/components/scanner/token-icon";
 import { fmtUsd, WARMUP_MINUTES, type BiasResult, type Signal } from "@/lib/bias/engine";
+import { fmtPrice } from "@/lib/bias/format";
 import { cn } from "@/lib/utils";
-import type { CohortSide } from "@/lib/cohorts/cohorts";
+
+export { fmtPrice };
 
 // ════════════════════════════════════════════════════════════════
-// Bias — pick a coin, read its order flow, get a directional bias.
-// Left: TradingView chart. Right: the bias and every piece of evidence
-// behind it. Interpretation, not trade calls — the trader decides.
+// Terminal — pick a coin, read its order flow, get a directional bias.
+// Layout (exchange-terminal style, Nov 2026):
+//   market bar
+//   chart (own toolbar) │ live order book │ bias + evidence
+//   bottom tabs (cohorts, liqs, prints, log)│
+//   status strip
+// Interpretation, not trade calls — the trader decides.
 // ════════════════════════════════════════════════════════════════
 
 interface MarketRow {
@@ -23,13 +32,7 @@ interface MarketRow {
   volume24hUsd: number;
 }
 
-export function fmtPrice(p: number | null | undefined): string {
-  if (p == null || !isFinite(p)) return "—";
-  if (p >= 1000) return p.toLocaleString("en-US", { maximumFractionDigits: 1 });
-  if (p >= 1) return p.toFixed(p >= 100 ? 2 : 3);
-  if (p >= 0.01) return p.toFixed(4);
-  return p.toPrecision(4);
-}
+const usd = (x: number) => fmtUsd(x).replace("+", "");
 
 export function BiasModule() {
   const { biasCoin, setBiasCoin } = useAppStore();
@@ -80,45 +83,228 @@ export function BiasModule() {
 
   return (
     <div className="flex-1 flex flex-col gap-2 overflow-hidden">
-      <HeaderBar
-        coin={biasCoin}
-        onPick={setBiasCoin}
-        of={of}
-        interval={interval}
-        onInterval={setInterval_}
-        indicators={indicators}
-        setIndicators={setIndicators}
-        panelOpen={panelOpen}
-        onTogglePanel={togglePanel}
-      />
+      <MarketBar coin={biasCoin} onPick={setBiasCoin} of={of} panelOpen={panelOpen} onTogglePanel={togglePanel} />
       <div className="flex-1 flex gap-2 min-h-0">
-        <section className="flex-1 min-w-0 ds-card-panel overflow-hidden">
-          <OrderflowChart key={biasCoin} of={of} coin={biasCoin} interval={interval} indicators={indicators} setIndicators={setIndicators} liqLevels={liqLevels} />
-        </section>
+        <div className="flex-1 min-w-0 flex flex-col gap-2">
+          <div className="flex-1 min-h-0 flex gap-2">
+            <section className="flex-1 min-w-0 ds-card-panel overflow-hidden flex flex-col">
+              <ChartToolbar interval={interval} onInterval={setInterval_} indicators={indicators} setIndicators={setIndicators} />
+              <div className="flex-1 min-h-0 relative">
+                <OrderflowChart key={biasCoin} of={of} coin={biasCoin} interval={interval} indicators={indicators} setIndicators={setIndicators} liqLevels={liqLevels} />
+              </div>
+            </section>
+            <div className="hidden lg:flex w-[248px] xl:w-[272px] shrink-0 flex-col min-h-0">
+              <OrderBookPanel feed={of.live} coin={biasCoin} whaleMin={of.whaleMin} />
+            </div>
+          </div>
+          <BottomPanel of={of} />
+        </div>
         {panelOpen && (
-          <aside className="terminal-side w-[340px] xl:w-[380px] shrink-0 overflow-y-auto rounded-xl">
+          <aside className="terminal-side w-[320px] xl:w-[340px] shrink-0 overflow-y-auto rounded-xl">
             <div className="flex flex-col gap-2">
               <BiasCard bias={of.bias} of={of} />
-              <SignalList bias={of.bias} />
-              <LiqPanel of={of} />
-              <CohortPanel of={of} />
-              <PrintsPanel of={of} />
-              <BookPanel of={of} />
-              <TrackRecord of={of} />
-              <p className="text-[11px] text-txt-muted leading-[1.55] px-4 py-3">
-                Order flow is read live from Hyperliquid from the moment this tab opens. HL has no public historical tape,
-                so delta, prints and OI change build up over the session. Cohorts come from Hyperliquid&rsquo;s public
-                leaderboard; past PnL doesn&rsquo;t guarantee future skill. A bias is a read on who is in control, not a trade call.
-              </p>
+              <EvidenceList bias={of.bias} />
             </div>
           </aside>
         )}
+      </div>
+      <StatusStrip of={of} />
+    </div>
+  );
+}
+
+// ─── Market bar ─────────────────────────────────────────────────
+
+function MarketBar({ coin, onPick, of, panelOpen, onTogglePanel }: {
+  coin: string; onPick: (c: string) => void; of: OrderflowState; panelOpen: boolean; onTogglePanel: () => void;
+}) {
+  const ctx = of.ctx;
+  const countdown = useFundingCountdown();
+  const chg = ctx?.change24hPct ?? 0;
+  const px = of.lastPx;
+  const chgAbs = px != null && ctx ? px - px / (1 + chg / 100) : null;
+  const fundingPct = ctx ? ctx.fundingHourly * 100 : null;
+  const tone = chg >= 0 ? "text-positive" : "text-negative";
+  return (
+    <div className="h-14 shrink-0 ds-card-panel flex items-center gap-5 pl-2 pr-3">
+      <div className="flex items-center gap-2">
+        <CoinPicker coin={coin} onPick={onPick} />
+        {ctx?.maxLeverage ? (
+          <span className="ds-num text-[10.5px] font-semibold text-positive bg-positive/10 rounded px-1.5 py-0.5">{ctx.maxLeverage}x</span>
+        ) : null}
+      </div>
+      <div className="flex flex-col leading-[1.15] min-w-[96px]">
+        <span className="ds-num text-[17px] font-semibold text-txt-primary">{fmtPrice(px)}</span>
+        <span className={cn("ds-num text-[11.5px]", ctx ? tone : "text-txt-muted")}>
+          {ctx ? `${chg >= 0 ? "+" : ""}${chg.toFixed(2)}%` : "—"}
+        </span>
+      </div>
+      <Sep />
+      <Stat wide label="24h change" value={ctx && chgAbs != null ? `${chgAbs >= 0 ? "+" : "−"}${fmtPrice(Math.abs(chgAbs))}` : "—"} tone={ctx ? (chg >= 0 ? "pos" : "neg") : undefined} />
+      <Stat label="Mark" value={ctx ? fmtPrice(ctx.markPx) : "—"} />
+      <Stat wide label="Oracle" value={ctx ? fmtPrice(ctx.oraclePx) : "—"} />
+      <Stat label="24h volume" value={ctx ? usd(ctx.volume24hUsd) : "—"} />
+      <Stat label="Open interest" value={ctx ? usd(ctx.oiUsd) : "—"} />
+      <Stat
+        label="Funding / countdown"
+        value={fundingPct == null ? "—" : `${fundingPct >= 0 ? "+" : ""}${fundingPct.toFixed(4)}%  ${countdown}`}
+        tone={fundingPct == null ? undefined : fundingPct * 8 > 0.03 ? "neg" : fundingPct * 8 < -0.01 ? "pos" : undefined}
+      />
+      <div className="ml-auto flex items-center gap-2">
+        <BiasChip bias={of.bias} />
+        <button
+          onClick={onTogglePanel}
+          title={panelOpen ? "Hide bias panel" : "Show bias panel"}
+          className={cn(
+            "h-8 px-3 rounded-full text-[12.5px] font-medium flex items-center gap-1.5 transition-colors",
+            panelOpen ? "bg-elevated-2 text-txt-primary" : "text-txt-muted hover:text-txt-primary hover:bg-elevated"
+          )}
+        >
+          <SidebarSimple size={15} mirrored />
+          Bias
+        </button>
       </div>
     </div>
   );
 }
 
-// ─── Header (TradingView-style top bar) ─────────────────────────
+const Sep = () => <span className="w-px h-7 bg-border shrink-0" />;
+
+function Stat({ label, value, tone, wide }: { label: string; value: string; tone?: "pos" | "neg"; wide?: boolean }) {
+  return (
+    <div className={cn("hidden flex-col leading-[1.2] shrink-0", wide ? "xl:flex" : "lg:flex")}>
+      <span className="text-[11px] text-txt-muted whitespace-nowrap">{label}</span>
+      <span className={cn("ds-num text-[12.5px] font-medium whitespace-pre", tone === "pos" ? "text-positive" : tone === "neg" ? "text-negative" : "text-txt-primary")}>{value}</span>
+    </div>
+  );
+}
+
+/** Compact verdict so the read is visible even with the panel closed. */
+function BiasChip({ bias }: { bias: BiasResult | null }) {
+  if (!bias) return null;
+  const warming = bias.warmingUp;
+  const dir = bias.direction;
+  const cls = warming || dir === "neutral"
+    ? "text-txt-secondary bg-white/[0.05]"
+    : dir === "long" ? "text-positive bg-positive/10" : "text-negative bg-negative/10";
+  return (
+    <span className={cn("h-8 px-3 rounded-full flex items-center gap-2 text-[12px] font-medium", cls)}>
+      <span className={cn("w-1.5 h-1.5 rounded-full", warming ? "bg-warning animate-pulse" : dir === "long" ? "bg-positive" : dir === "short" ? "bg-negative" : "bg-txt-muted")} />
+      {warming ? "Reading tape" : dir === "neutral" ? "Neutral" : dir === "long" ? "Long bias" : "Short bias"}
+      {!warming && <span className="ds-num opacity-80">{bias.score > 0 ? "+" : ""}{bias.score}</span>}
+    </span>
+  );
+}
+
+// ─── Chart toolbar ──────────────────────────────────────────────
+
+function ChartToolbar({ interval, onInterval, indicators, setIndicators }: {
+  interval: ChartInterval; onInterval: (i: ChartInterval) => void;
+  indicators: Indicators; setIndicators: (f: (i: Indicators) => Indicators) => void;
+}) {
+  return (
+    <div className="h-10 shrink-0 flex items-center gap-2 px-2 border-b border-border">
+      <div className="flex items-center gap-0.5">
+        {(Object.keys(CHART_INTERVALS) as ChartInterval[]).map((i) => (
+          <button
+            key={i}
+            onClick={() => onInterval(i)}
+            className={cn(
+              "h-7 px-2.5 rounded-full text-[12px] font-medium ds-num transition-colors",
+              interval === i ? "bg-elevated-2 text-txt-primary" : "text-txt-muted hover:text-txt-primary"
+            )}
+          >
+            {i}
+          </button>
+        ))}
+      </div>
+      <span className="w-px h-5 bg-border" />
+      <IndicatorsMenu indicators={indicators} setIndicators={setIndicators} />
+    </div>
+  );
+}
+
+// ─── Evidence (compact; click a row for the explanation) ────────
+
+function EvidenceList({ bias }: { bias: BiasResult | null }) {
+  const [openId, setOpenId] = useState<string | null>(null);
+  if (!bias) return null;
+  return (
+    <div className="ds-panel">
+      <div className="h-10 px-4 flex items-center justify-between border-b border-border">
+        <span className="text-[13px] font-semibold text-txt-primary">Evidence</span>
+        <span className="text-[11px] text-txt-muted">weight · pull</span>
+      </div>
+      {bias.signals.map((s) => (
+        <EvidenceRow key={s.id} s={s} open={openId === s.id} onToggle={() => setOpenId((v) => (v === s.id ? null : s.id))} />
+      ))}
+      <div className="px-4 py-2.5 border-t border-border flex items-center gap-1.5 text-[11px] text-txt-muted"
+        title="Order flow is read live from Hyperliquid from the moment this tab opens. HL has no public historical tape, so delta, prints and OI change build up over the session. Cohorts come from Hyperliquid's public leaderboard; past PnL doesn't guarantee future skill.">
+        <Info size={13} />
+        A read on who is in control, not a trade call.
+      </div>
+    </div>
+  );
+}
+
+function EvidenceRow({ s, open, onToggle }: { s: Signal; open: boolean; onToggle: () => void }) {
+  const pull = s.available ? s.score : 0;
+  const tone = pull >= 0.15 ? "text-positive" : pull <= -0.15 ? "text-negative" : "text-txt-secondary";
+  return (
+    <div className={cn("border-t border-border first-of-type:border-t-0", !s.available && "opacity-55")}>
+      <button onClick={onToggle} className="w-full px-4 py-2 flex items-center gap-2 text-left ds-row-hover">
+        <CaretRight size={11} className={cn("text-txt-muted shrink-0 transition-transform", open && "rotate-90")} />
+        <span className="flex-1 min-w-0">
+          <span className="block text-[12.5px] font-medium text-txt-primary truncate">{s.label}</span>
+          <span className={cn("block ds-num text-[11.5px] truncate", tone)}>{s.available ? s.value : "—"}</span>
+        </span>
+        <span className="ds-num text-[11px] text-txt-muted w-8 text-right">{Math.round(s.weight * 100)}%</span>
+        <PullBar v={pull} />
+      </button>
+      {open && <p className="px-4 pl-[33px] pb-2.5 -mt-0.5 text-[12px] text-txt-secondary leading-[1.5]">{s.available ? s.read : s.why}</p>}
+    </div>
+  );
+}
+
+/** Centered bar: fills left (bearish, red) or right (bullish, green). */
+function PullBar({ v }: { v: number }) {
+  const w = Math.min(1, Math.abs(v)) * 50;
+  return (
+    <div className="relative w-[56px] h-1.5 rounded-full bg-elevated overflow-hidden shrink-0">
+      <div className="absolute inset-y-0 left-1/2 w-px bg-border-strong" />
+      <div
+        className={cn("absolute inset-y-0", v >= 0 ? "bg-positive" : "bg-negative")}
+        style={v >= 0 ? { left: "50%", width: `${w}%` } : { right: "50%", width: `${w}%` }}
+      />
+    </div>
+  );
+}
+
+// ─── Status strip ───────────────────────────────────────────────
+
+function StatusStrip({ of }: { of: OrderflowState }) {
+  const tapeMin = of.bias ? Math.floor(of.bias.tapeMinutes) : 0;
+  const warm = of.bias ? Math.min(1, of.bias.tapeMinutes / WARMUP_MINUTES) : 0;
+  const feed = of.status === "live" ? "Feed live" : of.status === "connecting" ? "Connecting" : "Feed blocked";
+  return (
+    <div className="h-5 shrink-0 flex items-center gap-4 px-2 text-[11px] text-txt-muted">
+      <span className="flex items-center gap-1.5"><Dot ok={of.status !== "error"} />Hyperliquid mainnet</span>
+      <span className="flex items-center gap-1.5">
+        <Dot ok={of.status === "live"} warn={of.status === "connecting"} />
+        {feed}
+      </span>
+      <span className="ds-num">Tape {tapeMin} min</span>
+      {of.bias?.warmingUp && <span className="ds-num">Bias warm-up {Math.floor(warm * 100)}%</span>}
+      {of.ctxError && <span className="text-negative">Market data delayed</span>}
+    </div>
+  );
+}
+
+const Dot = ({ ok, warn }: { ok: boolean; warn?: boolean }) => (
+  <span className={cn("w-1.5 h-1.5 rounded-full", warn ? "bg-warning animate-pulse" : ok ? "bg-positive" : "bg-negative")} />
+);
+
+// ─── Shared pieces ──────────────────────────────────────────────
 
 function useFundingCountdown() {
   const [now, setNow] = useState<number | null>(null);
@@ -135,80 +321,6 @@ function useFundingCountdown() {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-interface HeaderProps {
-  coin: string;
-  onPick: (c: string) => void;
-  of: OrderflowState;
-  interval: ChartInterval;
-  onInterval: (i: ChartInterval) => void;
-  indicators: Indicators;
-  setIndicators: (f: (i: Indicators) => Indicators) => void;
-  panelOpen: boolean;
-  onTogglePanel: () => void;
-}
-
-function HeaderBar({ coin, onPick, of, interval, onInterval, indicators, setIndicators, panelOpen, onTogglePanel }: HeaderProps) {
-  const ctx = of.ctx;
-  const f8h = ctx ? ctx.fundingHourly * 8 * 100 : null;
-  const countdown = useFundingCountdown();
-  const chg = ctx?.change24hPct ?? 0;
-  return (
-    <div className="h-12 shrink-0 ds-card-panel flex items-center gap-3 px-3">
-      <CoinPicker coin={coin} onPick={onPick} />
-      <Divider />
-      <div className="flex items-center gap-0.5">
-        {(Object.keys(CHART_INTERVALS) as ChartInterval[]).map((i) => (
-          <button
-            key={i}
-            onClick={() => onInterval(i)}
-            className={cn(
-              "h-7 px-2 rounded-md text-[12.5px] font-medium ds-num transition-colors",
-              interval === i ? "bg-elevated text-txt-primary" : "text-txt-muted hover:text-txt-primary hover:bg-panel"
-            )}
-          >
-            {i}
-          </button>
-        ))}
-      </div>
-      <Divider />
-      <IndicatorsMenu indicators={indicators} setIndicators={setIndicators} />
-      <Divider />
-      <div className="flex items-baseline gap-2">
-        <span className="ds-num text-[16px] font-semibold text-txt-primary">{fmtPrice(of.lastPx)}</span>
-        {ctx && (
-          <span className={cn("ds-num text-[12px] font-medium px-1.5 py-0.5 rounded", chg >= 0 ? "text-positive bg-positive/10" : "text-negative bg-negative/10")}>
-            {chg >= 0 ? "+" : ""}{chg.toFixed(2)}%
-          </span>
-        )}
-      </div>
-      <HeaderStat label="24h volume" value={ctx ? fmtUsd(ctx.volume24hUsd).replace("+", "") : "—"} />
-      <HeaderStat label="Open interest" value={ctx ? fmtUsd(ctx.oiUsd).replace("+", "") : "—"} />
-      <HeaderStat
-        label="Funding / countdown"
-        value={f8h == null ? "—" : `${f8h >= 0 ? "+" : ""}${(f8h / 8).toFixed(4)}% · ${countdown}`}
-        tone={f8h == null ? undefined : f8h > 0.03 ? "neg" : f8h < -0.01 ? "pos" : undefined}
-      />
-      <div className="ml-auto flex items-center gap-3">
-        <div className="hidden md:flex items-center gap-1.5">
-          <span className={cn("w-1.5 h-1.5 rounded-full", of.status === "live" ? "bg-accent" : of.status === "connecting" ? "bg-warning animate-pulse" : "bg-negative")} />
-          <span className="text-[11.5px] text-txt-muted">
-            {of.status === "live" ? "Live" : of.status === "connecting" ? "Connecting" : "Feed blocked"}
-          </span>
-        </div>
-        <button
-          onClick={onTogglePanel}
-          title={panelOpen ? "Hide bias panel" : "Show bias panel"}
-          className={cn("h-7 px-2.5 rounded-md text-[12.5px] font-medium flex items-center gap-1.5 transition-colors", panelOpen ? "bg-elevated text-txt-primary" : "text-txt-muted hover:text-txt-primary hover:bg-panel")}
-        >
-          <PanelRight className="w-3.5 h-3.5" />
-          Bias
-        </button>
-      </div>
-    </div>
-  );
-}
-
-const Divider = () => <span className="w-px h-5 bg-border" />;
 
 function IndicatorsMenu({ indicators, setIndicators }: { indicators: Indicators; setIndicators: (f: (i: Indicators) => Indicators) => void }) {
   const [open, setOpen] = useState(false);
@@ -258,14 +370,6 @@ function IndicatorsMenu({ indicators, setIndicators }: { indicators: Indicators;
   );
 }
 
-function HeaderStat({ label, value, tone }: { label: string; value: string; tone?: "pos" | "neg" }) {
-  return (
-    <div className="hidden lg:flex flex-col leading-[1.15]">
-      <span className="text-[10.5px] text-txt-muted uppercase tracking-[0.04em]">{label}</span>
-      <span className={cn("ds-num text-[12.5px] font-medium", tone === "pos" ? "text-positive" : tone === "neg" ? "text-negative" : "text-txt-primary")}>{value}</span>
-    </div>
-  );
-}
 
 export function CoinPicker({ coin, onPick }: { coin: string; onPick: (c: string) => void }) {
   const [open, setOpen] = useState(false);
@@ -355,6 +459,7 @@ export function CoinPicker({ coin, onPick }: { coin: string; onPick: (c: string)
   );
 }
 
+
 // ─── Bias card ──────────────────────────────────────────────────
 
 function BiasCard({ bias, of }: { bias: BiasResult | null; of: OrderflowState }) {
@@ -371,7 +476,7 @@ function BiasCard({ bias, of }: { bias: BiasResult | null; of: OrderflowState })
       : `radial-gradient(120% 70% at 85% -10%, ${bias.direction === "long" ? "rgba(31,184,128," : "rgba(239,68,68,"}${bias.strength === "strong" ? 0.16 : 0.08}), transparent 65%)`;
 
   return (
-    <div className="ds-panel ds-panel-signature p-5 relative overflow-hidden">
+    <div className="ds-panel ds-panel-signature p-4 relative overflow-hidden">
       {glow && <div className="absolute inset-0 pointer-events-none" style={{ background: glow }} />}
       <div className="relative">
       <div className="flex items-start justify-between">
@@ -457,200 +562,6 @@ function MiniStat({ label, value }: { label: string; value: string }) {
   );
 }
 
-// ─── Evidence ───────────────────────────────────────────────────
-
-function SignalList({ bias }: { bias: BiasResult | null }) {
-  if (!bias) return null;
-  return (
-    <div className="ds-panel">
-      <div className="px-4 pt-4 pb-2 flex items-baseline justify-between">
-        <span className="ds-section-title">Evidence</span>
-        <span className="ds-label">weight · pull</span>
-      </div>
-      <div className="flex flex-col">
-        {bias.signals.map((s) => (
-          <SignalRow key={s.id} s={s} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function SignalRow({ s }: { s: Signal }) {
-  const pull = s.available ? s.score : 0;
-  const tone = pull >= 0.15 ? "text-positive" : pull <= -0.15 ? "text-negative" : "text-txt-secondary";
-  return (
-    <div className={cn("px-4 py-3 border-t border-border", !s.available && "opacity-55")}>
-      <div className="flex items-center gap-3">
-        <span className="text-[13px] font-medium text-txt-primary flex-1">{s.label}</span>
-        <span className="ds-num text-[11px] text-txt-muted">{Math.round(s.weight * 100)}%</span>
-        <PullBar v={pull} />
-      </div>
-      <div className={cn("ds-num text-[12px] mt-1", tone)}>{s.value}</div>
-      <p className="text-[12px] text-txt-secondary leading-[1.5] mt-1">{s.available ? s.read : s.why}</p>
-    </div>
-  );
-}
-
-/** Centered bar: fills left (bearish, red) or right (bullish, green). */
-function PullBar({ v }: { v: number }) {
-  const w = Math.min(1, Math.abs(v)) * 50;
-  return (
-    <div className="relative w-[72px] h-1.5 rounded-full bg-elevated overflow-hidden">
-      <div className="absolute inset-y-0 left-1/2 w-px bg-border-strong" />
-      <div
-        className={cn("absolute inset-y-0", v >= 0 ? "bg-positive" : "bg-negative")}
-        style={v >= 0 ? { left: "50%", width: `${w}%` } : { right: "50%", width: `${w}%` }}
-      />
-    </div>
-  );
-}
-
-function PrintsPanel({ of }: { of: OrderflowState }) {
-  return (
-    <div className="ds-panel">
-      <div className="px-4 pt-4 pb-2 flex items-baseline justify-between">
-        <span className="ds-section-title">Large prints</span>
-        <span className="ds-label">≥ {fmtUsd(of.whaleMin).replace("+", "")}</span>
-      </div>
-      {of.bigPrints.length === 0 ? (
-        <div className="px-4 pb-4 text-[12px] text-txt-muted">None yet this session.</div>
-      ) : (
-        <div className="max-h-[220px] overflow-y-auto pb-2">
-          {of.bigPrints.map((t, i) => (
-            <div key={`${t.t}-${i}`} className="flex items-center px-4 h-7 ds-row-hover">
-              <span className={cn("w-12 text-[12px] font-medium", t.side === 1 ? "text-positive" : "text-negative")}>
-                {t.side === 1 ? "Buy" : "Sell"}
-              </span>
-              <span className="ds-num text-[12px] text-txt-primary flex-1">{fmtUsd(t.usd).replace("+", "")}</span>
-              <span className="ds-num text-[12px] text-txt-secondary w-24 text-right">{fmtPrice(t.px)}</span>
-              <span className="ds-num text-[11px] text-txt-muted w-16 text-right">
-                {new Date(t.t).toLocaleTimeString([], { hour12: false })}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function BookPanel({ of }: { of: OrderflowState }) {
-  const book = of.book;
-  if (!book) {
-    return <div className="ds-panel h-[120px] skeleton" />;
-  }
-  const max = Math.max(...book.bids.map((l) => l.usd), ...book.asks.map((l) => l.usd), 1);
-  const rows = Math.min(8, book.bids.length, book.asks.length);
-  return (
-    <div className="ds-panel">
-      <div className="px-4 pt-4 pb-2 flex items-baseline justify-between">
-        <span className="ds-section-title">Order book</span>
-        <span className="ds-label">top {rows} levels</span>
-      </div>
-      <div className="px-4 pb-4 grid grid-cols-2 gap-x-2">
-        {Array.from({ length: rows }).map((_, i) => (
-          <BookRowPair key={i} bid={book.bids[i]} ask={book.asks[i]} max={max} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function BookRowPair({ bid, ask, max }: { bid: { px: number; usd: number }; ask: { px: number; usd: number }; max: number }) {
-  return (
-    <>
-      <div className="relative h-6 flex items-center justify-between px-1.5">
-        <div className="absolute inset-y-0.5 right-0 bg-positive/12 rounded-sm" style={{ width: `${(bid.usd / max) * 100}%` }} />
-        <span className="relative ds-num text-[11px] text-txt-muted">{fmtUsd(bid.usd).replace("+", "")}</span>
-        <span className="relative ds-num text-[11.5px] text-positive">{fmtPrice(bid.px)}</span>
-      </div>
-      <div className="relative h-6 flex items-center justify-between px-1.5">
-        <div className="absolute inset-y-0.5 left-0 bg-negative/12 rounded-sm" style={{ width: `${(ask.usd / max) * 100}%` }} />
-        <span className="relative ds-num text-[11.5px] text-negative">{fmtPrice(ask.px)}</span>
-        <span className="relative ds-num text-[11px] text-txt-muted">{fmtUsd(ask.usd).replace("+", "")}</span>
-      </div>
-    </>
-  );
-}
-
-function TrackRecord({ of }: { of: OrderflowState }) {
-  const s = of.logStats;
-  return (
-    <div className="ds-panel ds-stat-accent px-4 py-3.5">
-      <div className="flex items-baseline justify-between">
-        <span className="text-[13px] font-medium text-txt-primary">Track record · this browser</span>
-        <span className="ds-num text-[13px] text-txt-primary">
-          {s?.hitRate != null ? `${Math.round(s.hitRate * 100)}%` : "—"}
-        </span>
-      </div>
-      <p className="text-[11.5px] text-txt-muted leading-[1.5] mt-1">
-        {s && s.graded > 0
-          ? `${s.hits}/${s.graded} directional reads on this coin were right 15 min later${s.graded < 30 ? " — too few to trust yet" : ""}. ${s.pending} pending.`
-          : "Logs the bias every 5 min and checks price 15 min later. Needs 30+ graded reads before the number means anything."}
-      </p>
-    </div>
-  );
-}
-
-// ─── Sharps vs donors ───────────────────────────────────────────
-
-function CohortPanel({ of }: { of: OrderflowState }) {
-  const c = of.cohorts;
-  const d = c?.data;
-  const div = d?.divergence ?? 0;
-  const ageMin = c ? Math.max(0, Math.round((Date.now() - c.updatedAt) / 60_000)) : 0;
-  return (
-    <div className="ds-panel">
-      <div className="px-4 pt-4 flex items-baseline justify-between">
-        <span className="ds-section-title">Sharps vs donors</span>
-        <span className={cn("ds-num text-[13px] font-medium", div >= 20 ? "text-positive" : div <= -20 ? "text-negative" : "text-txt-secondary")}>
-          {d ? `${div > 0 ? "+" : ""}${div}` : "—"}
-        </span>
-      </div>
-      <p className="px-4 mt-1 text-[11.5px] text-txt-muted leading-[1.5]">
-        Top {c?.tracked.sharps ?? "…"} profitable active wallets vs the {c?.tracked.donors ?? "…"} biggest active losers on
-        Hyperliquid. Positive = winners are longer than losers.
-      </p>
-      {!c ? (
-        <div className="m-4 h-[88px] skeleton" />
-      ) : !d ? (
-        <div className="px-4 py-4 text-[12px] text-txt-muted">No tracked wallets hold this coin right now.</div>
-      ) : (
-        <div className="px-4 pt-3 pb-4 flex flex-col gap-3">
-          <CohortRow label="Sharps" side={d.sharps} />
-          <CohortRow label="Donors" side={d.donors} />
-          <div className="ds-micro">Updated {ageMin === 0 ? "just now" : `${ageMin}m ago`} · tracked wallets only, not the whole market</div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function CohortRow({ label, side }: { label: string; side: CohortSide }) {
-  const gross = side.longUsd + side.shortUsd;
-  const longPct = gross > 0 ? (side.longUsd / gross) * 100 : 50;
-  const n = side.longWallets + side.shortWallets;
-  return (
-    <div>
-      <div className="flex items-baseline justify-between mb-1.5">
-        <span className="text-[12.5px] font-medium text-txt-primary">
-          {label} <span className="text-txt-muted font-normal">· {n} wallet{n === 1 ? "" : "s"}</span>
-        </span>
-        <span className="ds-num text-[11.5px] text-txt-secondary">
-          {gross > 0 ? `${Math.round(longPct)}% long` : "no positions"}
-        </span>
-      </div>
-      <div className="h-2 rounded-full bg-negative/40 overflow-hidden flex">
-        <div className="h-full bg-positive/80" style={{ width: `${longPct}%` }} />
-      </div>
-      <div className="flex justify-between mt-1 ds-num text-[11px] text-txt-muted">
-        <span>L {fmtUsd(side.longUsd).replace("+", "")} · {side.longWallets}</span>
-        <span>{side.shortWallets} · S {fmtUsd(side.shortUsd).replace("+", "")}</span>
-      </div>
-    </div>
-  );
-}
 
 // ─── Multi-timeframe ────────────────────────────────────────────
 
@@ -689,59 +600,3 @@ function MtfRow({ mtf }: { mtf: NonNullable<OrderflowState["mtf"]> }) {
   );
 }
 
-// ─── Liquidation levels ─────────────────────────────────────────
-
-function LiqPanel({ of }: { of: OrderflowState }) {
-  const px = of.lastPx ?? 0;
-  const levels = (of.cohorts?.data?.liqLevels ?? []).filter((l) => px > 0 && Math.abs(l.px - px) / px <= 0.25);
-  // Biggest 3 on each side within 25%, then shown nearest-first.
-  const size = (l: { longUsd: number; shortUsd: number }) => l.longUsd + l.shortUsd;
-  const above = levels.filter((l) => l.px > px).sort((a, b) => size(b) - size(a)).slice(0, 3).sort((a, b) => a.px - b.px);
-  const below = levels.filter((l) => l.px <= px).sort((a, b) => size(b) - size(a)).slice(0, 3).sort((a, b) => b.px - a.px);
-  return (
-    <div className="ds-panel">
-      <div className="px-4 pt-4 flex items-baseline justify-between">
-        <span className="ds-section-title">Liquidation levels</span>
-        <span className="ds-label">tracked wallets</span>
-      </div>
-      <p className="px-4 mt-1 text-[11.5px] text-txt-muted leading-[1.5]">
-        Where tracked sharps and donors get force-closed. A move into a cluster can accelerate as liquidations fire. Tracked
-        wallets only, not the whole market.
-      </p>
-      {!of.cohorts ? (
-        <div className="m-4 h-[60px] skeleton" />
-      ) : above.length + below.length === 0 ? (
-        <div className="px-4 py-4 text-[12px] text-txt-muted">No tracked liquidations within 25% of price.</div>
-      ) : (
-        <div className="px-4 pt-2 pb-3">
-          {[...above.reverse(), null, ...below].map((l, i) =>
-            l === null ? (
-              <div key="px" className="flex items-center gap-2 my-1.5">
-                <span className="flex-1 h-px bg-border-strong" />
-                <span className="ds-num text-[11px] text-txt-primary">{fmtPrice(px)}</span>
-                <span className="flex-1 h-px bg-border-strong" />
-              </div>
-            ) : (
-              <LiqRow key={i} l={l} px={px} />
-            )
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function LiqRow({ l, px }: { l: import("@/lib/cohorts/cohorts").LiqLevel; px: number }) {
-  const longSide = l.longUsd >= l.shortUsd;
-  const usd = l.longUsd + l.shortUsd;
-  const dist = ((l.px - px) / px) * 100;
-  return (
-    <div className="flex items-center h-7 text-[12px]">
-      <span className={cn("w-[86px] font-medium", longSide ? "text-warning" : "text-[#60A5FA]")}>{longSide ? "Long liqs" : "Short liqs"}</span>
-      <span className="ds-num text-txt-primary flex-1">{fmtPrice(l.px)}</span>
-      <span className="ds-num text-txt-secondary w-16 text-right">{dist > 0 ? "+" : ""}{dist.toFixed(1)}%</span>
-      <span className="ds-num text-txt-primary w-20 text-right">{fmtUsd(usd).replace("+", "")}</span>
-      <span className="ds-num text-txt-muted w-10 text-right">{l.wallets}w</span>
-    </div>
-  );
-}

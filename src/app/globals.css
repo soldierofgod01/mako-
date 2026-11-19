@@ -279,3 +279,10 @@ body {
 }
 .terminal-side .ds-panel-signature::before { display: none; }
 .terminal-side .ds-stat-accent::after { display: none; }
+
+/* Order book: a level whose size just changed flashes once. */
+@keyframes bookFlash { from { opacity: 1; } to { opacity: 0; } }
+.book-flash { animation: bookFlash 450ms ease-out forwards; pointer-events: none; }
+.book-flash-bid { background: rgba(31, 184, 128, 0.22); }
+.book-flash-ask { background: rgba(239, 68, 68, 0.22); }
+@media (prefers-reduced-motion: reduce) { .book-flash { animation: none; opacity: 0; } }
