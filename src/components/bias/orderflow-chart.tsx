@@ -23,6 +23,8 @@ import { volumeProfile, vwapSeries, type VolumeProfile } from "@/lib/bias/chart-
 import { fmtUsd } from "@/lib/bias/engine";
 import { buildFootprint, niceStep } from "@/lib/bias/footprint";
 import type { LiqLevel } from "@/lib/cohorts/cohorts";
+import type { VolState } from "@/lib/vol/use-vol";
+import { rollingRv } from "@/lib/vol/options";
 import { CHART_INTERVALS, type ChartInterval, type OrderflowState } from "@/lib/hooks/use-orderflow";
 import { BubbleLayer, FootprintLayer, HeatmapLayer, ProfileLayer } from "./primitives";
 import { cn } from "@/lib/utils";
@@ -43,7 +45,7 @@ const AXIS_TEXT = "#8A8A91";
 const FONT = "Inter, -apple-system, BlinkMacSystemFont, sans-serif";
 const PROFILE_W = 90;
 
-export type IndicatorId = "vwap" | "profile" | "heatmap" | "footprint" | "bubbles" | "liqs" | "delta" | "cvd";
+export type IndicatorId = "vwap" | "profile" | "heatmap" | "footprint" | "bubbles" | "liqs" | "delta" | "cvd" | "dvol" | "rv" | "gex";
 export type IndicatorState = "off" | "on" | "hidden";
 export type Indicators = Record<IndicatorId, IndicatorState>;
 
@@ -56,6 +58,9 @@ const ALL_INDICATORS: { id: IndicatorId; label: string; desc: string }[] = [
   { id: "liqs", label: "Liquidation levels", desc: "Where tracked wallets get force-closed" },
   { id: "delta", label: "Delta", desc: "Net aggressive volume per candle · history on the top 20 coins" },
   { id: "cvd", label: "CVD", desc: "Cumulative volume delta · history on the top 20 coins" },
+  { id: "dvol", label: "DVOL", desc: "Deribit 30-day implied vol index · BTC and ETH" },
+  { id: "rv", label: "Realised vol", desc: "Rolling 30-bar realised vol, annualised · every coin" },
+  { id: "gex", label: "Gamma levels", desc: "Gamma flip + biggest dealer-gamma strikes · Deribit options" },
 ];
 
 // Parked Nov 2026: browser-only tape/book made these far weaker than dedicated
@@ -65,7 +70,7 @@ export const PARKED_INDICATORS: IndicatorId[] = ["heatmap", "footprint", "bubble
 export const INDICATORS = ALL_INDICATORS.filter((i) => !PARKED_INDICATORS.includes(i.id));
 
 export const DEFAULT_INDICATORS: Indicators = {
-  vwap: "off", profile: "off", heatmap: "off", footprint: "off", bubbles: "off", liqs: "off", delta: "off", cvd: "off",
+  vwap: "off", profile: "off", heatmap: "off", footprint: "off", bubbles: "off", liqs: "off", delta: "off", cvd: "off", dvol: "off", rv: "off", gex: "off",
 };
 
 const on = (s: IndicatorState) => s === "on";
@@ -86,13 +91,14 @@ interface Props {
   indicators: Indicators;
   setIndicators: (f: (i: Indicators) => Indicators) => void;
   liqLevels: LiqLevel[];
+  vol?: VolState;
 }
 
 interface Hover {
   o: number; h: number; l: number; c: number; v?: number; t: number;
 }
 
-export function OrderflowChart({ of, coin, interval, indicators, setIndicators, liqLevels }: Props) {
+export function OrderflowChart({ of, coin, interval, indicators, setIndicators, liqLevels, vol }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -100,6 +106,10 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
   const vwapRef = useRef<ISeriesApi<"Line"> | null>(null);
   const deltaRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const cvdRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const dvolRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const rvRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const gexLinesRef = useRef<IPriceLine[]>([]);
+  const gexKeyRef = useRef("");
   const hlRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const heatRef = useRef<HeatmapLayer | null>(null);
   const fpRef = useRef<FootprintLayer | null>(null);
@@ -112,10 +122,11 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
   const fpWasOn = useRef<boolean | null>(null);
   const [hover, setHover] = useState<Hover | null>(null);
   const [hoverT, setHoverT] = useState<number | null>(null);
-  const [pane0H, setPane0H] = useState<number | null>(null);
+  const [paneTops, setPaneTops] = useState<{ delta: number | null; vol: number | null }>({ delta: null, vol: null });
 
   const chart = of.chart && of.chart.interval === interval ? of.chart : null;
   const showLower = on(indicators.delta) || on(indicators.cvd);
+  const showVolPane = on(indicators.dvol) || on(indicators.rv);
 
   const profile: VolumeProfile | null = useMemo(
     () => (chart ? volumeProfile(chart.profile) : null),
@@ -196,8 +207,20 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
     c.subscribeCrosshairMove(onMove);
     chartRef.current = c;
 
+    // Where each lower pane starts (for its legend). Panes stack top-down with a 1px separator.
     const ph = setInterval(() => {
-      try { setPane0H(c.panes().length > 1 ? c.panes()[0].getHeight() : null); } catch { /* ignore */ }
+      try {
+        const panes = c.panes();
+        const topOf = (s: ISeriesApi<"Line"> | ISeriesApi<"Histogram"> | null) => {
+          if (!s) return null;
+          const idx = s.getPane().paneIndex();
+          let y = 0;
+          for (let i = 0; i < idx; i++) y += panes[i].getHeight() + 1;
+          return idx > 0 ? y : null;
+        };
+        const next = { delta: topOf(deltaRef.current), vol: topOf(dvolRef.current) };
+        setPaneTops((p) => (p.delta === next.delta && p.vol === next.vol ? p : next));
+      } catch { /* ignore */ }
     }, 500);
 
     return () => {
@@ -208,7 +231,11 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
       candleRef.current = null;
       deltaRef.current = null;
       cvdRef.current = null;
+      dvolRef.current = null;
+      rvRef.current = null;
       linesRef.current = [];
+      gexLinesRef.current = [];
+      gexKeyRef.current = "";
       dataKeyRef.current = "";
       linesKeyRef.current = "";
       precRef.current = -1;
@@ -224,11 +251,12 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
       deltaRef.current = c.addSeries(HistogramSeries, {
         priceLineVisible: false, lastValueVisible: false,
         priceFormat: { type: "custom", formatter: (v: number) => fmtUsd(v), minMove: 1 },
-      }, 1);
+      }, c.panes().length);
+      const idx = deltaRef.current.getPane().paneIndex();
       cvdRef.current = c.addSeries(LineSeries, {
         color: "#EDEDEF", lineWidth: 1, priceScaleId: "cvd", priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
-      }, 1);
-      try { c.panes()[1]?.setStretchFactor(0.25); c.panes()[0]?.setStretchFactor(0.75); } catch { /* ignore */ }
+      }, idx);
+      relayoutPanes(c);
       dataKeyRef.current = "";
     } else if (!showLower && deltaRef.current) {
       try {
@@ -237,8 +265,85 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
       } catch { /* ignore */ }
       deltaRef.current = null;
       cvdRef.current = null;
+      relayoutPanes(c);
     }
   }, [showLower]);
+
+  // ── Vol pane (DVOL / realised vol): its own pane at the bottom ──
+  useEffect(() => {
+    const c = chartRef.current;
+    if (!c) return;
+    if (showVolPane && !dvolRef.current) {
+      const fmt = { type: "custom" as const, formatter: (v: number) => v.toFixed(1), minMove: 0.1 };
+      dvolRef.current = c.addSeries(LineSeries, {
+        color: "#A78BFA", lineWidth: 2, priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false, priceFormat: fmt,
+      }, c.panes().length);
+      const idx = dvolRef.current.getPane().paneIndex();
+      rvRef.current = c.addSeries(LineSeries, {
+        color: "#38BDF8", lineWidth: 1, priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false, priceFormat: fmt,
+      }, idx);
+      relayoutPanes(c);
+    } else if (!showVolPane && dvolRef.current) {
+      try {
+        c.removeSeries(dvolRef.current);
+        if (rvRef.current) c.removeSeries(rvRef.current);
+      } catch { /* ignore */ }
+      dvolRef.current = null;
+      rvRef.current = null;
+      relayoutPanes(c);
+    }
+  }, [showVolPane]);
+
+  // ── DVOL (step-aligned to the chart's candles) + rolling realised vol ──
+  const rvBars = 30;
+  const rvSeries = useMemo(() => {
+    if (!chart?.candles.length) return [];
+    const ppy = (365 * 24 * 3600_000) / CHART_INTERVALS[chart.interval];
+    return rollingRv(chart.candles, rvBars, ppy);
+  }, [chart?.candles, chart?.interval]);
+  const dvolAligned = useMemo(() => {
+    const d = vol?.dvol;
+    if (!d?.length || !chart?.candles.length) return [];
+    const out: { t: number; v: number }[] = [];
+    let j = 0;
+    for (const k of chart.candles) {
+      while (j + 1 < d.length && d[j + 1].t <= k.t) j++;
+      if (d[j].t <= k.t + CHART_INTERVALS[chart.interval]) out.push({ t: k.t, v: d[j].v });
+    }
+    return out;
+  }, [vol?.dvol, chart?.candles, chart?.interval]);
+  useEffect(() => {
+    try {
+      dvolRef.current?.setData(on(indicators.dvol) ? dvolAligned.map((x) => ({ time: ts(x.t), value: x.v })) : []);
+      rvRef.current?.setData(on(indicators.rv) ? rvSeries.map((x) => ({ time: ts(x.t), value: x.v })) : []);
+    } catch { /* ignore */ }
+  }, [dvolAligned, rvSeries, indicators.dvol, indicators.rv, showVolPane]);
+
+  // ── Gamma levels: flip + biggest dealer-gamma strikes as price lines ──
+  useEffect(() => {
+    const cs = candleRef.current;
+    if (!cs) return;
+    const s = vol?.surface;
+    const px = of.lastPx ?? s?.spot ?? 0;
+    const levels = on(indicators.gex) && s && px > 0
+      ? s.gex.filter((g) => Math.abs(g.strike - px) / px <= 0.1).sort((a, b) => Math.abs(b.gex) - Math.abs(a.gex)).slice(0, 4)
+      : [];
+    const flip = on(indicators.gex) && s?.flip ? s.flip : null;
+    const key = JSON.stringify([flip?.toPrecision(6), levels.map((l) => `${l.strike}${l.gex > 0 ? "+" : "-"}`)]);
+    if (key === gexKeyRef.current) return;
+    gexKeyRef.current = key;
+    for (const l of gexLinesRef.current) { try { cs.removePriceLine(l); } catch { /* ignore */ } }
+    gexLinesRef.current = [];
+    if (flip) {
+      gexLinesRef.current.push(cs.createPriceLine({ price: flip, color: "rgba(245,158,11,0.8)", lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: "γ flip" }));
+    }
+    for (const l of levels) {
+      gexLinesRef.current.push(cs.createPriceLine({
+        price: l.strike, color: l.gex > 0 ? "rgba(31,184,128,0.5)" : "rgba(239,68,68,0.5)",
+        lineWidth: 1, lineStyle: LineStyle.SparseDotted, axisLabelVisible: false, title: l.gex > 0 ? "+γ" : "−γ",
+      }));
+    }
+  }, [vol?.surface, of.lastPx, indicators.gex]);
 
   // ── Candles, volume, VWAP, delta/CVD ──
   useEffect(() => {
@@ -421,12 +526,28 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
       case "liqs": return `${nearLiqs} within 15%`;
       case "delta": return deltaAt != null ? fmtUsd(deltaAt) : "—";
       case "cvd": return of.chart?.deltaSource === "live" ? "since tab opened" : "";
+      case "dvol": {
+        if (!vol || vol.coverage === "none" || (coin !== "BTC" && coin !== "ETH")) return `n/a for ${coin} · BTC & ETH only`;
+        const at = atT != null ? dvolAligned.find((x) => x.t === atT)?.v : undefined;
+        return (at ?? vol.dvolNow)?.toFixed(1) ?? "loading";
+      }
+      case "rv": {
+        const at = atT != null ? rvSeries.find((x) => x.t === atT)?.v : undefined;
+        return `${rvBars} bars · ${(at ?? rvSeries[rvSeries.length - 1]?.v)?.toFixed(1) ?? "—"}`;
+      }
+      case "gex": {
+        const s = vol?.surface;
+        if (!s) return vol?.coverage === "none" ? `no listed ${coin} options` : "loading";
+        return `${s.totalGex >= 0 ? "long" : "short"} γ · flip ${s.flip ? s.flip.toPrecision(6).replace(/\.?0+$/, "") : "none ±15%"}`;
+      }
       default: return "";
     }
   };
 
-  const priceInds = INDICATORS.filter((i) => i.id !== "delta" && i.id !== "cvd" && indicators[i.id] !== "off");
+  const LOWER: IndicatorId[] = ["delta", "cvd", "dvol", "rv"];
+  const priceInds = INDICATORS.filter((i) => !LOWER.includes(i.id) && indicators[i.id] !== "off");
   const lowerInds = INDICATORS.filter((i) => (i.id === "delta" || i.id === "cvd") && indicators[i.id] !== "off");
+  const volInds = INDICATORS.filter((i) => (i.id === "dvol" || i.id === "rv") && indicators[i.id] !== "off");
 
   const toggleHide = (id: IndicatorId) => setIndicators((s) => ({ ...s, [id]: s[id] === "hidden" ? "on" : "hidden" }));
   const remove = (id: IndicatorId) => setIndicators((s) => ({ ...s, [id]: "off" }));
@@ -465,10 +586,20 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
       </div>
 
       {/* Legend — lower pane */}
-      {lowerInds.length > 0 && pane0H != null && (
-        <div className="absolute left-3 z-20 pointer-events-none select-none flex flex-col gap-0.5" style={{ top: pane0H + 6 }}>
+      {lowerInds.length > 0 && paneTops.delta != null && (
+        <div className="absolute left-3 z-20 pointer-events-none select-none flex flex-col gap-0.5" style={{ top: paneTops.delta + 6 }}>
           {lowerInds.map((i) => (
             <LegendRow key={i.id} label={i.label} value={indValue(i.id)} hidden={indicators[i.id] === "hidden"} onHide={() => toggleHide(i.id)} onRemove={() => remove(i.id)} />
+          ))}
+        </div>
+      )}
+
+      {/* Legend — vol pane */}
+      {volInds.length > 0 && paneTops.vol != null && (
+        <div className="absolute left-3 z-20 pointer-events-none select-none flex flex-col gap-0.5" style={{ top: paneTops.vol + 6 }}>
+          {volInds.map((i) => (
+            <LegendRow key={i.id} label={i.label} value={indValue(i.id)} hidden={indicators[i.id] === "hidden"} onHide={() => toggleHide(i.id)} onRemove={() => remove(i.id)}
+              dot={i.id === "dvol" ? "#A78BFA" : "#38BDF8"} />
           ))}
         </div>
       )}
@@ -478,9 +609,10 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
   );
 }
 
-function LegendRow({ label, value, hidden, onHide, onRemove }: { label: string; value: string; hidden: boolean; onHide: () => void; onRemove: () => void }) {
+function LegendRow({ label, value, hidden, onHide, onRemove, dot }: { label: string; value: string; hidden: boolean; onHide: () => void; onRemove: () => void; dot?: string }) {
   return (
     <div className="group flex items-center gap-2 h-[18px] text-[11.5px] pointer-events-auto w-fit pr-1 rounded hover:bg-white/[0.04]">
+      {dot && <span className="w-2 h-[2px] rounded-full" style={{ background: dot }} />}
       <span className={cn(hidden ? "text-txt-dim" : "text-txt-secondary")}>{label}</span>
       {value && <span className={cn("ds-num", hidden ? "text-txt-dim" : "text-txt-primary")}>{value}</span>}
       <span className="hidden group-hover:flex items-center gap-1 ml-0.5">
@@ -493,4 +625,16 @@ function LegendRow({ label, value, hidden, onHide, onRemove }: { label: string; 
       </span>
     </div>
   );
+}
+
+/** Main pane gets most of the height; each lower pane shares the rest. */
+function relayoutPanes(c: IChartApi) {
+  try {
+    const panes = c.panes();
+    const n = panes.length;
+    if (n <= 1) return;
+    const main = n === 2 ? 0.75 : 0.62;
+    panes[0].setStretchFactor(main);
+    for (let i = 1; i < n; i++) panes[i].setStretchFactor((1 - main) / (n - 1));
+  } catch { /* ignore */ }
 }

@@ -8,6 +8,7 @@ import { useOrderflow, CHART_INTERVALS, type ChartInterval, type OrderflowState 
 import { DEFAULT_INDICATORS, INDICATORS, OrderflowChart, PARKED_INDICATORS, type Indicators } from "./orderflow-chart";
 import { OrderBookPanel } from "./order-book";
 import { BottomPanel } from "./bottom-panel";
+import { useVol } from "@/lib/vol/use-vol";
 import { TokenIcon } from "@/components/scanner/token-icon";
 import { fmtUsd, WARMUP_MINUTES, type BiasResult, type Signal } from "@/lib/bias/engine";
 import { fmtPrice } from "@/lib/bias/format";
@@ -80,6 +81,7 @@ export function BiasModule() {
 
   const of = useOrderflow(biasCoin, interval);
   const liqLevels = of.cohorts?.data?.liqLevels ?? [];
+  const vol = useVol(biasCoin, of.ctx?.markPx ?? of.lastPx, CHART_INTERVALS[interval]);
 
   return (
     <div className="flex-1 flex flex-col gap-2 overflow-hidden">
@@ -90,14 +92,14 @@ export function BiasModule() {
             <section className="flex-1 min-w-0 ds-card-panel overflow-hidden flex flex-col">
               <ChartToolbar interval={interval} onInterval={setInterval_} indicators={indicators} setIndicators={setIndicators} />
               <div className="flex-1 min-h-0 relative">
-                <OrderflowChart key={biasCoin} of={of} coin={biasCoin} interval={interval} indicators={indicators} setIndicators={setIndicators} liqLevels={liqLevels} />
+                <OrderflowChart key={biasCoin} of={of} coin={biasCoin} interval={interval} indicators={indicators} setIndicators={setIndicators} liqLevels={liqLevels} vol={vol} />
               </div>
             </section>
             <div className="hidden lg:flex w-[248px] xl:w-[272px] shrink-0 flex-col min-h-0">
               <OrderBookPanel feed={of.live} coin={biasCoin} whaleMin={of.whaleMin} />
             </div>
           </div>
-          <BottomPanel of={of} />
+          <BottomPanel of={of} vol={vol} />
         </div>
         {panelOpen && (
           <aside className="terminal-side w-[320px] xl:w-[340px] shrink-0 overflow-y-auto rounded-xl">

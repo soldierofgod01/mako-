@@ -1,0 +1,198 @@
+"use client";
+import { fmtUsd } from "@/lib/bias/engine";
+import { fmtPrice } from "@/lib/bias/format";
+import type { VolState } from "@/lib/vol/use-vol";
+import { cn } from "@/lib/utils";
+
+// ════════════════════════════════════════════════════════════════
+// Volatility tab — implied vs realised vol, skew, term structure and what
+// the options market's Greeks add up to (dealer gamma, flip, max pain).
+// Every number gets one plain-English line: interpretation, not a chain.
+// ════════════════════════════════════════════════════════════════
+
+const usd = (x: number) => fmtUsd(x).replace("+", "");
+const pts = (x: number) => `${x > 0 ? "+" : x < 0 ? "−" : ""}${Math.abs(x).toFixed(1)}`;
+const fmtExp = (ms: number) => new Date(ms).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+
+type Tone = "pos" | "neg" | "warn" | undefined;
+
+export function VolPanel({ vol, px }: { vol: VolState; px: number | null }) {
+  const s = vol.surface;
+  const spot = px ?? s?.spot ?? null;
+  const iv = vol.dvolNow ?? s?.atm30 ?? null;
+  const ivLabel = vol.dvolNow != null ? "DVOL" : "ATM IV · 30d";
+  const rv30 = vol.rv?.d30 ?? null;
+
+  if (vol.loading && !s && !vol.rv) {
+    return <div className="p-4 grid grid-cols-4 gap-2">{Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-[72px] skeleton" />)}</div>;
+  }
+
+  const tiles: { label: string; value: string; sub?: string; read: string; tone?: Tone }[] = [];
+
+  // Implied
+  if (iv != null) {
+    tiles.push({
+      label: ivLabel,
+      value: iv.toFixed(1),
+      sub: vol.dvolNow != null ? "Deribit 30-day implied vol index" : "Interpolated from the chain",
+      read: `Options price a ~${(iv / Math.sqrt(365)).toFixed(1)}% daily move (1σ).`,
+    });
+  }
+  // Realised
+  if (vol.rv) {
+    tiles.push({
+      label: "Realised vol",
+      value: rv30 != null ? rv30.toFixed(1) : "—",
+      sub: `24h ${vol.rv.d1?.toFixed(1) ?? "—"} · 7d ${vol.rv.d7?.toFixed(1) ?? "—"} · 30d`,
+      read:
+        vol.rv.d1 != null && rv30 != null
+          ? vol.rv.d1 > rv30 * 1.25 ? "Last 24h is moving well above its 30-day pace." : vol.rv.d1 < rv30 * 0.75 ? "Last 24h is quieter than its 30-day pace — compression." : "Moving at its usual 30-day pace."
+          : "Hyperliquid 1h candles, annualised.",
+    });
+  }
+  // IV − RV
+  if (iv != null && rv30 != null) {
+    const sp = iv - rv30;
+    tiles.push({
+      label: "IV − RV",
+      value: pts(sp),
+      sub: `${ivLabel} vs 30d realised`,
+      tone: sp > 5 ? "warn" : sp < -5 ? "pos" : undefined,
+      read: sp > 5 ? "Options price more movement than is being delivered — vol is rich." : sp < -5 ? "Options are cheap vs what price is actually doing." : "Implied ≈ realised — vol fairly priced.",
+    });
+  }
+  if (s) {
+    if (s.skew25 != null) {
+      tiles.push({
+        label: "25Δ skew · 30d",
+        value: pts(s.skew25),
+        sub: "Call IV − put IV, vol points",
+        tone: s.skew25 < -3 ? "neg" : s.skew25 > 3 ? "pos" : undefined,
+        read: s.skew25 < -3 ? "Puts bid over calls — the market is paying for downside protection." : s.skew25 > 3 ? "Calls bid over puts — demand for upside." : "Balanced — no strong hedging lean either way.",
+      });
+    }
+    if (s.front && s.back && s.back.expiry !== s.front.expiry) {
+      const inv = s.front.atmIv - s.back.atmIv;
+      tiles.push({
+        label: "Term structure",
+        value: `${s.front.atmIv.toFixed(1)} → ${s.back.atmIv.toFixed(1)}`,
+        sub: `${fmtExp(s.front.expiry)} → ${fmtExp(s.back.expiry)} ATM IV`,
+        tone: inv > 2 ? "warn" : undefined,
+        read: inv > 2 ? "Inverted — near-term stress or an event being priced." : inv < -2 ? "Upward sloping — calm near term." : "Flat — no near-term premium.",
+      });
+    }
+    if (s.putCallOi != null) {
+      tiles.push({
+        label: "Put / call OI",
+        value: s.putCallOi.toFixed(2),
+        sub: `${usd(s.totalOi * (spot ?? s.spot))} open interest`,
+        read: s.putCallOi > 1.1 ? "More puts than calls open — positioned defensively." : s.putCallOi < 0.7 ? "Call-heavy — positioned for upside." : "Roughly balanced positioning.",
+      });
+    }
+    const longGamma = s.totalGex >= 0;
+    tiles.push({
+      label: "Dealer gamma",
+      value: longGamma ? "Long gamma" : "Short gamma",
+      sub: `${usd(Math.abs(s.totalGex))} per 1% · flip ${s.flip ? fmtPrice(s.flip) : "outside ±15%"}`,
+      tone: longGamma ? "pos" : "neg",
+      read: longGamma
+        ? "Dealer hedging leans against moves — expect dampened, range-bound price."
+        : "Dealer hedging chases moves — expect moves to extend.",
+    });
+    if (s.maxPain && spot) {
+      const dist = ((s.maxPain.strike - spot) / spot) * 100;
+      tiles.push({
+        label: `Max pain · ${fmtExp(s.maxPain.expiry)}`,
+        value: fmtPrice(s.maxPain.strike),
+        sub: `${dist > 0 ? "+" : ""}${dist.toFixed(1)}% from price`,
+        read: "Strike where most options expire worthless. Pull matters most in the final day.",
+      });
+    }
+  }
+
+  return (
+    <div className="p-3 flex gap-3 min-h-full">
+      <div className="flex-1 min-w-0 flex flex-col gap-2">
+        <CoverageLine vol={vol} />
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-2">
+          {tiles.map((t) => (
+            <div key={t.label} className="rounded-[10px] bg-void border border-border px-3 py-2.5">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-[11px] text-txt-muted truncate">{t.label}</span>
+                <span className={cn("ds-num text-[15px] font-semibold whitespace-nowrap",
+                  t.tone === "pos" ? "text-positive" : t.tone === "neg" ? "text-negative" : t.tone === "warn" ? "text-warning" : "text-txt-primary")}>
+                  {t.value}
+                </span>
+              </div>
+              {t.sub && <div className="ds-num text-[10.5px] text-txt-dim mt-0.5 truncate">{t.sub}</div>}
+              <p className="text-[11.5px] text-txt-secondary leading-[1.4] mt-1">{t.read}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+      {s && spot && <GexBars vol={vol} spot={spot} />}
+    </div>
+  );
+}
+
+function CoverageLine({ vol }: { vol: VolState }) {
+  const txt =
+    vol.coverage === "full" ? `Deribit ${vol.coin} options · full chain`
+      : vol.coverage === "thin" ? `Deribit ${vol.coin}_USDC options · thin market, IV and gamma are noisier`
+        : `${vol.coin} has no listed options — realised vol only`;
+  return (
+    <div className="flex items-center gap-2 text-[11px] text-txt-muted">
+      <span className={cn("w-1.5 h-1.5 rounded-full", vol.error ? "bg-negative" : vol.coverage === "full" ? "bg-positive" : vol.coverage === "thin" ? "bg-warning" : "bg-txt-muted")} />
+      {vol.error ? "Couldn't reach Deribit from this network" : txt}
+      {vol.updatedAt && <span className="text-txt-dim">· updated {new Date(vol.updatedAt).toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit" })}</span>}
+    </div>
+  );
+}
+
+/** Dealer gamma by strike near price: + (dampening) right, − (amplifying) left. */
+function GexBars({ vol, spot }: { vol: VolState; spot: number }) {
+  const s = vol.surface!;
+  const near = s.gex.filter((g) => Math.abs(g.strike - spot) / spot <= 0.1 && g.gex !== 0);
+  const rows = near
+    .sort((a, b) => Math.abs(b.gex) - Math.abs(a.gex))
+    .slice(0, 14)
+    .sort((a, b) => b.strike - a.strike);
+  const max = Math.max(...rows.map((r) => Math.abs(r.gex)), 1);
+  const spotIdx = rows.findIndex((r) => r.strike < spot);
+  return (
+    <div className="w-[260px] shrink-0 rounded-[10px] bg-void border border-border px-3 py-2.5 flex flex-col">
+      <div className="flex items-baseline justify-between">
+        <span className="text-[11px] text-txt-muted">Gamma by strike · ±10%</span>
+        <span className="text-[10.5px] text-txt-dim">$ per 1%</span>
+      </div>
+      <div className="mt-1.5 flex flex-col">
+        {rows.map((r, i) => (
+          <div key={r.strike}>
+            {i === spotIdx && (
+              <div className="flex items-center gap-1.5 my-0.5">
+                <span className="flex-1 h-px bg-border-strong" />
+                <span className="ds-num text-[10px] text-txt-primary">{fmtPrice(spot)}</span>
+                <span className="flex-1 h-px bg-border-strong" />
+              </div>
+            )}
+            <div className="grid grid-cols-[64px_1fr_52px] items-center h-[17px] gap-1.5 ds-num text-[10.5px]">
+              <span className={cn("text-right", s.flip && Math.abs(r.strike - s.flip) / spot < 0.004 ? "text-warning" : "text-txt-secondary")}>{fmtPrice(r.strike)}</span>
+              <div className="relative h-2">
+                <div className="absolute inset-y-0 left-1/2 w-px bg-border-strong" />
+                <div
+                  className={cn("absolute inset-y-0 rounded-sm", r.gex >= 0 ? "bg-positive/70" : "bg-negative/70")}
+                  style={r.gex >= 0 ? { left: "50%", width: `${(r.gex / max) * 50}%` } : { right: "50%", width: `${(-r.gex / max) * 50}%` }}
+                />
+              </div>
+              <span className="text-right text-txt-muted">{usd(Math.abs(r.gex))}</span>
+            </div>
+          </div>
+        ))}
+        {rows.length === 0 && <span className="text-[11.5px] text-txt-muted mt-1">No meaningful gamma near price.</span>}
+      </div>
+      <p className="mt-auto pt-2 text-[10.5px] text-txt-dim leading-[1.4]">
+        Assumes customers buy puts and sell calls, so dealers are long calls and short puts (the industry convention). Real positioning isn&rsquo;t public.
+      </p>
+    </div>
+  );
+}
