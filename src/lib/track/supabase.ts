@@ -25,3 +25,13 @@ export async function supabaseRpc<T = unknown>(fn: string, args: object): Promis
   if (!res.ok) throw new Error(`supabase ${fn} ${res.status}: ${(await res.text()).slice(0, 200)}`);
   return res.json() as Promise<T>;
 }
+
+/** Read a table through PostgREST (tables with a public-read RLS policy only). */
+export async function supabaseSelect<T = unknown>(table: string, query: string): Promise<T> {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${query}`, {
+    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`supabase ${table} ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  return res.json() as Promise<T>;
+}

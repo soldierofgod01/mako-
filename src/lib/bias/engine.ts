@@ -83,6 +83,9 @@ export interface BiasResult {
   horizon: Horizon["id"];
   tapeMinutes: number;
   warmingUp: boolean;
+  /** "recorder" = shown from the 24/7 recorder while this tab's tape warms up. */
+  source?: "live" | "recorder";
+  recorderAgeSec?: number;
 }
 
 // ─── Tunables ───────────────────────────────────────────────────

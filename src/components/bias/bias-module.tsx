@@ -294,10 +294,15 @@ function StatusStrip({ of }: { of: OrderflowState }) {
         {feed}
       </span>
       <span className="ds-num">Tape {tapeMin} min</span>
+      {of.bias?.source === "recorder" && <span>Bias from 24/7 recorder · live read in {Math.max(1, Math.ceil(WARMUP_MINUTES - (of.bias?.tapeMinutes ?? 0)))} min</span>}
       {of.bias?.warmingUp && <span className="ds-num">Bias warm-up {Math.floor(warm * 100)}%</span>}
       {of.ctxError && <span className="text-negative">Market data delayed</span>}
     </div>
   );
+}
+
+function fmtAge(sec: number) {
+  return sec < 90 ? `${sec}s` : `${Math.round(sec / 60)} min`;
 }
 
 const Dot = ({ ok, warn }: { ok: boolean; warn?: boolean }) => (
@@ -532,6 +537,12 @@ function BiasCard({ bias, of }: { bias: BiasResult | null; of: OrderflowState })
           {of.restored.gapSec > 90 ? ` · ${Math.round(of.restored.gapSec / 60)} min gap while away (not reconstructed)` : ""}.
         </p>
       )}
+      {bias.source === "recorder" && (
+        <p className="mt-3 text-[11.5px] text-txt-muted leading-[1.5]">
+          From Mako&rsquo;s 24/7 recorder (updated {fmtAge(bias.recorderAgeSec ?? 0)} ago) while this tab reads the tape.
+          Switches to the live read in {Math.max(1, Math.ceil(WARMUP_MINUTES - bias.tapeMinutes))} min.
+        </p>
+      )}
       {bias.warmingUp && (
         <div className="mt-4">
           <div className="flex justify-between ds-label mb-1.5">
@@ -577,7 +588,7 @@ function MtfRow({ mtf }: { mtf: NonNullable<OrderflowState["mtf"]> }) {
           return (
             <div key={b.horizon} className={cn("rounded-[8px] border px-2.5 py-2", b.horizon === "15m" ? "border-border-strong bg-elevated/40" : "border-border bg-void")}>
               <div className="flex items-baseline justify-between">
-                <span className="ds-num text-[11px] text-txt-muted">{b.horizon}</span>
+                <span className="ds-num text-[11px] text-txt-muted">{b.horizon}{b.source === "recorder" && <span className="ml-1 text-txt-dim" title="From the 24/7 recorder until this tab's tape warms up">rec</span>}</span>
                 <span className={cn("ds-num text-[12.5px] font-semibold", b.warmingUp ? "text-txt-dim" : tone)}>
                   {b.warmingUp ? "…" : `${b.score > 0 ? "+" : ""}${b.score}`}
                 </span>

@@ -20,6 +20,7 @@ import { candleDelta } from "@/lib/bias/chart-math";
 import { BiasSmoother, SMOOTH, applySmoothing } from "@/lib/bias/smooth";
 import type { HeatFrame } from "@/lib/bias/footprint";
 import { LiveFeed, type LiveTrade } from "@/lib/bias/live-feed";
+import { fromRecorder, RECORDER_MAX_AGE_MS, type RecorderRead } from "@/lib/bias/recorder-seed";
 
 const HEAT_KEEP_MS = 45 * 60_000;
 
@@ -285,6 +286,21 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
       if (timer) clearTimeout(timer);
     };
   }, [coin, live]);
+
+  // ── Recorder seed: the 24/7 recorder's latest read (top 20 coins) ──
+  // Shown while this tab's own tape warms up, so the bias is there instantly.
+  const recQuery = useQuery({
+    queryKey: ["flow-latest", coin],
+    queryFn: async (): Promise<{ coin: string; reads: Partial<Record<"5m" | "15m" | "1h", RecorderRead>> }> => {
+      const res = await fetch(`/api/flow/latest?coin=${encodeURIComponent(coin)}`);
+      if (!res.ok) throw new Error("flow latest failed");
+      return res.json();
+    },
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: false,
+  });
+  const recRef = useRef<typeof recQuery.data | null>(null);
+  recRef.current = recQuery.data && recQuery.data.coin === coin ? recQuery.data : null;
 
   // ── Wallet cohorts: slow (server refreshes every 3 min) ──────────
   const cohortQuery = useQuery({
@@ -696,11 +712,20 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
         // Raw engine reads → smoothed, hysteresis-held reads (what the user sees).
         const sm = smoothersRef.current;
         const raw = { "5m": computeBias(input, H5), "15m": computeBias(input, H15), "1h": computeBias(input, H60) };
-        const mtf = {
-          "5m": applySmoothing(raw["5m"], sm["5m"].update(raw["5m"].score, now)),
-          "15m": applySmoothing(raw["15m"], sm["15m"].update(raw["15m"].score, now)),
-          "1h": applySmoothing(raw["1h"], sm["1h"].update(raw["1h"].score, now)),
+        // While a horizon is still warming up, show the recorder's read (if it
+        // has this coin) and feed its score into the smoother, so the hand-off
+        // to this tab's own read is continuous instead of a jump.
+        const rec = recRef.current?.reads ?? {};
+        const read = (id: "5m" | "15m" | "1h"): BiasResult => {
+          const r = raw[id];
+          const seed = rec[id];
+          if (r.warmingUp && seed && now - seed.t < RECORDER_MAX_AGE_MS) {
+            sm[id].update(seed.score, now);
+            return fromRecorder(r, seed, now);
+          }
+          return applySmoothing(r, sm[id].update(r.score, now));
         };
+        const mtf = { "5m": read("5m"), "15m": read("15m"), "1h": read("1h") };
         const bias = mtf["15m"];
 
         const iv = intervalRef.current;
@@ -720,7 +745,7 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
         const whaleMin = whaleThreshold(vol);
 
         let stats: LogStats | null = null;
-        if (!bias.warmingUp && lastPx && typeof window !== "undefined") {
+        if (!bias.warmingUp && bias.source !== "recorder" && lastPx && typeof window !== "undefined") {
           const log = tickLog(coinRef.current, bias.score, lastPx, now);
           stats = logStats(log, coinRef.current);
         }
