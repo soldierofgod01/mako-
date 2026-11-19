@@ -140,7 +140,7 @@ function MarketBar({ coin, onPick, of, panelOpen, onTogglePanel }: {
         </span>
       </div>
       <Sep />
-      <Stat wide label="24h change" value={ctx && chgAbs != null ? `${chgAbs >= 0 ? "+" : "−"}${fmtPrice(Math.abs(chgAbs))}` : "—"} tone={ctx ? (chg >= 0 ? "pos" : "neg") : undefined} />
+      <Stat wide label="24h change" value={ctx && chgAbs != null ? `${chgAbs >= 0 ? "+" : "−"}${Math.abs(chgAbs) >= 1 ? Math.abs(chgAbs).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : fmtPrice(Math.abs(chgAbs))}` : "—"} tone={ctx ? (chg >= 0 ? "pos" : "neg") : undefined} />
       <Stat label="Mark" value={ctx ? fmtPrice(ctx.markPx) : "—"} />
       <Stat wide label="Oracle" value={ctx ? fmtPrice(ctx.oraclePx) : "—"} />
       <Stat label="24h volume" value={ctx ? usd(ctx.volume24hUsd) : "—"} />

@@ -248,10 +248,10 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
     }
   }
 
-  // ── Display book: REST poll every 500ms while visible ──────────
+  // ── Display book: REST poll every 300ms while visible ──────────
   // Measured Nov 2026: HL's WS l2Book pushes a snapshot only every ~10s,
   // while REST returns a fresh book on every call. Weight 2 per call →
-  // ~240/min of HL's 1200/min per-IP budget, and only while the tab is shown.
+  // ≤400/min of HL's 1200/min per-IP budget (fetch latency included), only while shown.
   useEffect(() => {
     let stop = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -276,7 +276,7 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
           }
         } catch { /* network blip or abort — WS book is the fallback */ }
       }
-      if (!stop) timer = setTimeout(poll, 500);
+      if (!stop) timer = setTimeout(poll, 300);
     };
     poll();
     return () => {
