@@ -77,14 +77,21 @@ export class LiveFeed {
     this.emit();
   }
 
-  /** Coalesce bursts (HL sends book + trades in the same tick) into one render per frame. */
+  /**
+   * Coalesce bursts (HL sends book + trades in the same tick) into one render
+   * per frame. Hidden tabs never run animation frames, so fall back to a slow
+   * timer there — the book is current the moment the tab is shown again.
+   */
   private emit() {
     if (typeof window === "undefined") return;
     if (this.frame) return;
-    this.frame = window.requestAnimationFrame(() => {
+    const run = () => {
       this.frame = 0;
       this.version++;
       for (const fn of this.listeners) fn();
-    });
+    };
+    this.frame = document.visibilityState === "hidden"
+      ? (window.setTimeout(run, 250) as unknown as number)
+      : window.requestAnimationFrame(run);
   }
 }
