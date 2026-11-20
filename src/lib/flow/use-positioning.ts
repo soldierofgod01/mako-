@@ -66,5 +66,5 @@ export const REGIME_STYLE: Record<OiRegime, { color: string; label: string }> = 
   "short-build": { color: "rgba(239,68,68,0.85)", label: "Shorts opening" },
   "short-cover": { color: "rgba(56,189,248,0.8)", label: "Shorts closing" },
   "long-unwind": { color: "rgba(245,158,11,0.8)", label: "Longs closing" },
-  flat: { color: "rgba(155,155,160,0.35)", label: "No real OI change" },
+  flat: { color: "rgba(155,155,160,0.55)", label: "OI flat" },
 };
