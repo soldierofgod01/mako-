@@ -99,7 +99,7 @@ export function BiasModule() {
               <OrderBookPanel feed={of.live} coin={biasCoin} whaleMin={of.whaleMin} />
             </div>
           </div>
-          <BottomPanel of={of} vol={vol} />
+          <BottomPanel of={of} vol={vol} coin={biasCoin} />
         </div>
         {panelOpen && (
           <aside className="terminal-side w-[320px] xl:w-[340px] shrink-0 overflow-y-auto rounded-xl">

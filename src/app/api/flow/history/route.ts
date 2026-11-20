@@ -7,7 +7,7 @@ import { supabaseRpc } from "@/lib/track/supabase";
 
 export const dynamic = "force-dynamic";
 
-const INTERVALS: Record<string, number> = { "1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400 };
+const INTERVALS: Record<string, number> = { "1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400 };
 const BARS = 400;
 
 export async function GET(req: Request) {
@@ -16,7 +16,8 @@ export async function GET(req: Request) {
   const bucket = INTERVALS[sp.get("interval") ?? ""];
   if (!/^[A-Za-z0-9:]{1,20}$/.test(coin) || !bucket) return NextResponse.json({ error: "bad request" }, { status: 400 });
   try {
-    const since = new Date(Date.now() - BARS * bucket * 1000).toISOString();
+    // Daily buckets: the recorder keeps ~30 days, so ask for all of it.
+    const since = new Date(Date.now() - Math.min(BARS * bucket, 31 * 86400) * 1000).toISOString();
     const data = await supabaseRpc<{ recorded: boolean; since: string | null; bars: [number, number, number][] }>(
       "flow_history",
       { p_coin: coin, p_bucket_s: bucket, p_since: since }
