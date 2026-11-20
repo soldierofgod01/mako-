@@ -352,7 +352,7 @@ function IndicatorsMenu({ indicators, setIndicators }: { indicators: Indicators;
         {active > 0 && <span className="ds-num text-[11px] text-txt-muted">{active}</span>}
       </button>
       {open && (
-        <div className="absolute left-0 top-9 z-50 w-[320px] rounded-lg border border-border-strong bg-elevated shadow-2xl py-1.5">
+        <div onWheel={(e) => e.stopPropagation()} className="absolute left-0 top-9 z-50 w-[320px] max-h-[min(560px,calc(100vh-180px))] overflow-y-auto overscroll-contain rounded-lg border border-border-strong bg-elevated shadow-2xl py-1.5">
           {INDICATORS.map((i) => {
             const isOn = indicators[i.id] !== "off";
             return (
