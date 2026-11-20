@@ -786,7 +786,9 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
         return `${fmtUsd(at.oi).replace("+", "")} · ${at.chg >= 0 ? "+" : ""}${at.chg.toFixed(2)}% · ${REGIME_STYLE[at.regime].label}`;
       }
       case "funding": {
-        const at = atT != null ? fundBars.find((b) => b.t === atT) : fundBars[fundBars.length - 1];
+        // Funding settles hourly: show the latest print at or before the hovered bar.
+        let at = fundBars[fundBars.length - 1];
+        if (atT != null) at = [...fundBars].reverse().find((b) => b.t <= atT) ?? at;
         if (!at) return fundQ.isLoading ? "loading" : "—";
         return `${at.rate >= 0 ? "+" : ""}${at.rate.toFixed(4)}%/h · ${(at.rate * 24 * 365).toFixed(1)}% APR`;
       }
@@ -810,7 +812,7 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
   const volInds = INDICATORS.filter((i) => (i.id === "dvol" || i.id === "rv") && indicators[i.id] !== "off");
   const paneLegend = (id: IndicatorId, top: number | null | undefined) =>
     indicators[id] !== "off" && top != null ? (
-      <div className="absolute left-3 z-20 pointer-events-none select-none flex flex-col gap-0.5" style={{ top: top + 6 }}>
+      <div className="absolute left-1.5 z-20 pointer-events-none select-none flex flex-col gap-0.5 rounded-md bg-[#070709]/80 px-1.5" style={{ top: top + 4 }}>
         <LegendRow label={INDICATORS.find((i) => i.id === id)!.label} value={indValue(id)} hidden={indicators[id] === "hidden"}
           onHide={() => toggleHide(id)} onRemove={() => remove(id)} dot={SWATCH[id]} />
       </div>
@@ -855,9 +857,8 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
       {/* Legend — lower pane */}
       {paneLegend("oi", paneTops.oi)}
       {paneLegend("funding", paneTops.funding)}
-      {paneLegend("barstats", paneTops.stats)}
       {lowerInds.length > 0 && paneTops.delta != null && (
-        <div className="absolute left-3 z-20 pointer-events-none select-none flex flex-col gap-0.5" style={{ top: paneTops.delta + 6 }}>
+        <div className="absolute left-1.5 z-20 pointer-events-none select-none flex flex-col gap-0.5 rounded-md bg-[#070709]/80 px-1.5" style={{ top: paneTops.delta + 4 }}>
           {lowerInds.map((i) => (
             <LegendRow key={i.id} label={i.label} value={indValue(i.id)} hidden={indicators[i.id] === "hidden"} onHide={() => toggleHide(i.id)} onRemove={() => remove(i.id)} dot={SWATCH[i.id]} />
           ))}
@@ -866,7 +867,7 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
 
       {/* Legend — vol pane */}
       {volInds.length > 0 && paneTops.vol != null && (
-        <div className="absolute left-3 z-20 pointer-events-none select-none flex flex-col gap-0.5" style={{ top: paneTops.vol + 6 }}>
+        <div className="absolute left-1.5 z-20 pointer-events-none select-none flex flex-col gap-0.5 rounded-md bg-[#070709]/80 px-1.5" style={{ top: paneTops.vol + 4 }}>
           {volInds.map((i) => (
             <LegendRow key={i.id} label={i.label} value={indValue(i.id)} hidden={indicators[i.id] === "hidden"} onHide={() => toggleHide(i.id)} onRemove={() => remove(i.id)}
               dot={SWATCH[i.id]} />
