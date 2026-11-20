@@ -759,7 +759,17 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
           lastPx,
           cvd: cvdRef.current.slice(),
           ...(() => {
-            const big = trades.filter((t) => t.usd >= whaleMin);
+            // HL splits one taker order into many fills (same ms, same side, walking
+            // the book). Re-assemble them so a $500k market order reads as one print.
+            const orders: Trade[] = [];
+            for (const t of trades) {
+              const last = orders[orders.length - 1];
+              if (last && last.t === t.t && last.side === t.side) {
+                const usd = last.usd + t.usd, sz = last.sz + t.sz;
+                orders[orders.length - 1] = { t: t.t, side: t.side, usd, sz, px: usd / sz };
+              } else orders.push({ ...t });
+            }
+            const big = orders.filter((t) => t.usd >= whaleMin);
             return { bigPrints: big.slice(-25).reverse(), allPrints: big.slice(-400) };
           })(),
           whaleMin,

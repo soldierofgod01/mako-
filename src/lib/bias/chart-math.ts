@@ -110,3 +110,36 @@ export function candleDelta(trades: Trade[], intervalMs: number): Map<number, { 
   }
   return m;
 }
+
+
+/**
+ * Absorption: strong aggressive flow that didn't move price. Per the Nov 2026
+ * findings, strong delta (top 20% of |delta| over the window) with a flat bar
+ * (|return| < 0.5σ of trailing returns) went against the aggressors ~59% of the
+ * time over the next 15m. Closed bars only.
+ */
+export function absorptionMarks(
+  candles: Candle[],
+  delta: Map<number, number>,
+  window = 200
+): { t: number; side: 1 | -1 }[] {
+  const out: { t: number; side: 1 | -1 }[] = [];
+  const rets: number[] = [];
+  const mags: number[] = [];
+  for (let i = 0; i < candles.length - 1; i++) {
+    const c = candles[i];
+    const r = c.o > 0 ? (c.c - c.o) / c.o : 0;
+    const d = delta.get(c.t);
+    if (d != null && rets.length >= 30 && mags.length >= 30) {
+      const w = rets.slice(-96);
+      const mean = w.reduce((s, x) => s + x, 0) / w.length;
+      const sd = Math.sqrt(w.reduce((s, x) => s + (x - mean) ** 2, 0) / (w.length - 1)) || 0;
+      const m = mags.slice(-window).sort((a, b) => a - b);
+      const p80 = m[Math.floor(m.length * 0.8)];
+      if (sd > 0 && Math.abs(d) >= p80 && Math.abs(d) > 0 && Math.abs(r / sd) < 0.5) out.push({ t: c.t, side: d > 0 ? 1 : -1 });
+    }
+    rets.push(r);
+    if (d != null) mags.push(Math.abs(d));
+  }
+  return out;
+}

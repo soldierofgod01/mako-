@@ -303,6 +303,8 @@ export class FootprintLayer extends Layer {
 // ─── Bubbles ─────────────────────────────────────────────────────
 export class BubbleLayer extends Layer {
   prints: Trade[] = [];
+  /** Threshold the prints were filtered at — bubble size is relative to it, not to the biggest print. */
+  minUsd = 25_000;
   private view = new View("top", (target) => this.drawBubbles(target));
   paneViews() { return this.enabled ? [this.view] : []; }
 
@@ -310,28 +312,91 @@ export class BubbleLayer extends Layer {
     const tm = this.timeMap();
     const s = this.series;
     if (!tm || !s || !this.prints.length) return;
-    const max = Math.max(...this.prints.map((p) => p.usd), 1);
+    // Smallest first so the big ones sit on top.
+    const sorted = [...this.prints].sort((a, b) => a.usd - b.usd);
     target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
       ctx.font = `600 10px Inter, -apple-system, sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      for (const p of this.prints) {
+      for (const p of sorted) {
         const x = tm.x(p.t);
         const y = s.priceToCoordinate(p.px);
         if (x == null || y == null || x < -30 || x > mediaSize.width + 30) continue;
-        const r = 3 + 17 * Math.sqrt(p.usd / max);
+        const rel = p.usd / this.minUsd;
+        const r = Math.min(24, 3.5 + 4.5 * Math.log2(1 + rel));
+        const buy = p.side === 1;
         ctx.beginPath();
         ctx.arc(x, y, r, 0, Math.PI * 2);
-        ctx.fillStyle = p.side === 1 ? "rgba(31,184,128,0.32)" : "rgba(239,68,68,0.32)";
+        ctx.fillStyle = buy ? `rgba(31,184,128,${rel >= 4 ? 0.38 : 0.24})` : `rgba(239,68,68,${rel >= 4 ? 0.38 : 0.24})`;
         ctx.fill();
-        ctx.lineWidth = 1.25;
-        ctx.strokeStyle = p.side === 1 ? "rgba(51,255,163,0.95)" : "rgba(255,92,92,0.95)";
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = buy ? "rgba(31,184,128,0.9)" : "rgba(239,68,68,0.9)";
         ctx.stroke();
-        if (r >= 12) {
+        if (rel >= 4 && r >= 11) {
           ctx.fillStyle = "rgba(237,237,239,0.95)";
           ctx.fillText(k(p.usd), x, y);
         }
       }
+    });
+  }
+}
+
+// ─── Bar statistics (MotiveWave-style rows under the chart) ──────
+export interface BarStat { t: number; vol: number; delta: number | null; buy: number; sell: number }
+
+export class BarStatsLayer extends Layer {
+  stats: BarStat[] = [];
+  private view = new View("top", (target) => this.drawStats(target));
+  paneViews() { return this.enabled ? [this.view] : []; }
+
+  private drawStats(target: Target) {
+    const tm = this.timeMap();
+    if (!tm || !this.stats.length) return;
+    const vols = this.stats.map((x) => x.vol).sort((a, b) => a - b);
+    const vP90 = vols[Math.floor(vols.length * 0.9)] || 1;
+    const ds = this.stats.filter((x) => x.delta != null).map((x) => Math.abs(x.delta!)).sort((a, b) => a - b);
+    const dP90 = ds[Math.floor(ds.length * 0.9)] || 1;
+    target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
+      const rows = 3;
+      const rh = mediaSize.height / rows;
+      const w = tm.spacing;
+      const text = w >= 34;
+      ctx.font = `${Math.min(10.5, rh - 6)}px "JetBrains Mono", monospace`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      for (const b of this.stats) {
+        const xc = tm.barX(b.t);
+        if (xc == null || xc + w < 0 || xc - w > mediaSize.width) continue;
+        const x0 = xc - w / 2 + 0.5;
+        const cw = Math.max(1, w - 1);
+        // Row 0 — volume
+        ctx.fillStyle = `rgba(155,155,160,${(0.06 + 0.3 * Math.min(1, b.vol / vP90)).toFixed(3)})`;
+        ctx.fillRect(x0, 0.5, cw, rh - 1);
+        // Rows 1–2 — delta and delta %
+        if (b.delta != null) {
+          const a = (0.08 + 0.55 * Math.min(1, Math.abs(b.delta) / dP90)).toFixed(3);
+          ctx.fillStyle = b.delta >= 0 ? `rgba(31,184,128,${a})` : `rgba(239,68,68,${a})`;
+          ctx.fillRect(x0, rh + 0.5, cw, rh - 1);
+          ctx.fillRect(x0, 2 * rh + 0.5, cw, rh - 1);
+        }
+        if (text) {
+          ctx.fillStyle = "rgba(237,237,239,0.9)";
+          ctx.fillText(k(b.vol) || "0", xc, rh / 2);
+          if (b.delta != null) {
+            const tot = b.buy + b.sell;
+            ctx.fillText(`${b.delta < 0 ? "−" : ""}${k(b.delta) || "0"}`, xc, rh * 1.5);
+            ctx.fillText(tot > 0 ? `${Math.round((b.delta / tot) * 100)}%` : "—", xc, rh * 2.5);
+          }
+        }
+      }
+      // Row labels on a backdrop at the left edge.
+      ctx.textAlign = "left";
+      ["Vol", "Δ", "Δ%"].forEach((l, i) => {
+        ctx.fillStyle = "rgba(7,7,9,0.85)";
+        ctx.fillRect(0, i * rh + 1, 30, rh - 2);
+        ctx.fillStyle = "rgba(155,155,160,0.95)";
+        ctx.fillText(l, 6, i * rh + rh / 2);
+      });
     });
   }
 }
