@@ -61,10 +61,17 @@ export function SideNav() {
   return (
     <aside className="w-16 shrink-0 flex flex-col items-center bg-transparent py-2">
       {/* Logo */}
-      <div className="h-12 flex items-center justify-center shrink-0" title="Mako">
+      <a
+        href="https://makoapp.xyz"
+        target="_blank"
+        rel="noopener noreferrer"
+        title="makoapp.xyz"
+        aria-label="Open makoapp.xyz"
+        className="h-12 w-12 flex items-center justify-center shrink-0 rounded-xl transition-colors hover:bg-white/[0.06]"
+      >
         {/* eslint-disable-next-line @next/next/no-img-element -- tiny static logo */}
         <img src="/mako-star.png" alt="Mako" width={28} height={28} className="w-7 h-7 object-contain" />
-      </div>
+      </a>
 
       {/* Search */}
       <div className="mt-2 mb-3">
