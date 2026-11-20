@@ -1,0 +1,33 @@
+# Research jobs (no app impact). Runs on pushes to research/* branches.
+# Exports recorder tables + HL history and commits them to research-data/ on this branch.
+name: research
+
+on:
+  push:
+    branches: ["research/**"]
+    paths: ["research/**", ".github/workflows/research.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Export data
+        run: node research/export.mjs
+        env:
+          SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlzaGRzYWpkeW1vbHRlYmdydG96Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4OTY3MDMsImV4cCI6MjA5MTQ3MjcwM30.x3FY72qlOqaPLc4r2QiW_QkfRW-bc5oMooPQ53U_tII' }}
+      - name: Commit data back
+        run: |
+          git config user.name "mako-research"
+          git config user.email "research@users.noreply.github.com"
+          git add -f research-data
+          git commit -m "research data export $(date -u +%FT%H%MZ)" || exit 0
+          git push
