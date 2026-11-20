@@ -62,9 +62,9 @@ export function oiRegime(priceChg: number, oiChgPct: number, minPct = 0.05): OiR
 }
 
 export const REGIME_STYLE: Record<OiRegime, { color: string; label: string }> = {
-  "long-build": { color: "rgba(31,184,128,0.85)", label: "Longs opening" },
-  "short-build": { color: "rgba(239,68,68,0.85)", label: "Shorts opening" },
-  "short-cover": { color: "rgba(56,189,248,0.8)", label: "Shorts closing" },
-  "long-unwind": { color: "rgba(245,158,11,0.8)", label: "Longs closing" },
+  "long-build": { color: "rgba(31,184,128,0.85)", label: "New longs" },
+  "short-build": { color: "rgba(239,68,68,0.85)", label: "New shorts" },
+  "short-cover": { color: "rgba(56,189,248,0.8)", label: "Short covering" },
+  "long-unwind": { color: "rgba(245,158,11,0.8)", label: "Long closing" },
   flat: { color: "rgba(155,155,160,0.55)", label: "OI flat" },
 };

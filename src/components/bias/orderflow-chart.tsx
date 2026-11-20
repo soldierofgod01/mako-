@@ -28,7 +28,7 @@ import type { LiqLevel } from "@/lib/cohorts/cohorts";
 import type { VolState } from "@/lib/vol/use-vol";
 import { rollingRv } from "@/lib/vol/options";
 import { CHART_INTERVALS, type ChartInterval, type OrderflowState } from "@/lib/hooks/use-orderflow";
-import { BandLayer, BarStatsLayer, BubbleLayer, FootprintLayer, HeatmapLayer, ProfileLayer } from "./primitives";
+import { AbsorptionBoxLayer, BandLayer, BarStatsLayer, BubbleLayer, FootprintLayer, HeatmapLayer, ProfileLayer } from "./primitives";
 import { oiRegime, REGIME_STYLE, useFundingHistory, useOiHistory } from "@/lib/flow/use-positioning";
 import { cn } from "@/lib/utils";
 
@@ -47,7 +47,7 @@ const DOWN_VOL = "rgba(239,68,68,0.28)";
 const AXIS_TEXT = "#8A8A91";
 const FONT = "Inter, -apple-system, BlinkMacSystemFont, sans-serif";
 
-export type IndicatorId = "vwap" | "vpvr" | "profile" | "heatmap" | "footprint" | "bubbles" | "liqs" | "delta" | "cvd" | "dvol" | "rv" | "gex" | "oi" | "funding" | "absorption" | "barstats";
+export type IndicatorId = "vwap" | "vpvr" | "profile" | "heatmap" | "footprint" | "bubbles" | "liqs" | "delta" | "cvd" | "dvol" | "rv" | "gex" | "oi" | "regimes" | "funding" | "absorption" | "barstats";
 export type IndicatorState = "off" | "on" | "hidden";
 export type Indicators = Record<IndicatorId, IndicatorState>;
 
@@ -64,10 +64,11 @@ const ALL_INDICATORS: { id: IndicatorId; label: string; desc: string }[] = [
   { id: "dvol", label: "DVOL", desc: "Deribit 30-day implied vol index · BTC and ETH" },
   { id: "rv", label: "Realised vol", desc: "Rolling 30-bar realised vol, annualised · every coin" },
   { id: "gex", label: "Gamma strikes", desc: "Strikes with the most option gamma near price · Deribit options" },
-  { id: "oi", label: "Open interest", desc: "OI + change per bar, coloured by who's opening/closing · 7d, every coin" },
+  { id: "oi", label: "Open interest", desc: "OI candles (open, high, low, close per bar) · 7d, every coin" },
+  { id: "regimes", label: "Positioning regimes", desc: "OI change per bar by who moved: new longs, new shorts, short covering, long closing" },
   { id: "funding", label: "Funding", desc: "Hourly funding rate · 30d from Hyperliquid" },
-  { id: "absorption", label: "Absorption", desc: "Strong aggressive flow that didn't move price · top 20 coins have history" },
-  { id: "barstats", label: "Bar statistics", desc: "Volume, delta and delta % under every bar" },
+  { id: "absorption", label: "Absorption", desc: "Delta per bar, lit where heavy one-sided flow failed to move price; boxed on the chart" },
+  { id: "barstats", label: "Bar statistics", desc: "Heat table under the chart: volume, delta, delta %, session CVD" },
 ];
 
 // Parked Nov 2026: browser-only tape/book made these far weaker than dedicated
@@ -77,7 +78,7 @@ export const PARKED_INDICATORS: IndicatorId[] = ["heatmap", "footprint"];
 export const INDICATORS = ALL_INDICATORS.filter((i) => !PARKED_INDICATORS.includes(i.id));
 
 export const DEFAULT_INDICATORS: Indicators = {
-  vwap: "off", vpvr: "off", profile: "off", heatmap: "off", footprint: "off", bubbles: "off", liqs: "off", delta: "off", cvd: "off", dvol: "off", rv: "off", gex: "off", oi: "off", funding: "off", absorption: "off", barstats: "off",
+  vwap: "off", vpvr: "off", profile: "off", heatmap: "off", footprint: "off", bubbles: "off", liqs: "off", delta: "off", cvd: "off", dvol: "off", rv: "off", gex: "off", oi: "off", regimes: "off", funding: "off", absorption: "off", barstats: "off",
 };
 
 const on = (s: IndicatorState) => s === "on";
@@ -93,7 +94,8 @@ const SWATCH: Partial<Record<IndicatorId, string>> = {
   cvd: "#EDEDEF",
   dvol: "#A78BFA",
   rv: "#38BDF8",
-  oi: "linear-gradient(90deg, #1FB880 25%, #EF4444 25% 50%, #38BDF8 50% 75%, #F59E0B 75%)",
+  oi: "linear-gradient(90deg, #1FB880 50%, #EF4444 50%)",
+  regimes: "linear-gradient(90deg, #1FB880 25%, #EF4444 25% 50%, #38BDF8 50% 75%, #F59E0B 75%)",
   funding: "linear-gradient(90deg, #1FB880 50%, #EF4444 50%)",
   absorption: "linear-gradient(90deg, #38BDF8 50%, #F59E0B 50%)",
   barstats: "#9B9BA0",
@@ -136,7 +138,11 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
   const dvolRef = useRef<ISeriesApi<"Line"> | null>(null);
   const rvRef = useRef<ISeriesApi<"Line"> | null>(null);
   const gexLinesRef = useRef<IPriceLine[]>([]);
-  const oiLineRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const oiLineRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const regRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const regMarkRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
+  const absPaneRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const absBoxRef = useRef<AbsorptionBoxLayer | null>(null);
   const fundRef = useRef<ISeriesApi<"Baseline"> | null>(null);
   const statsSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const statsLayerRef = useRef<BarStatsLayer | null>(null);
@@ -251,6 +257,10 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
     }
     hlRef.current = createSeriesMarkers(candleRef.current, []);
     absMarkRef.current = createSeriesMarkers(candleRef.current, []);
+    regMarkRef.current = createSeriesMarkers(candleRef.current, []);
+    absBoxRef.current = new AbsorptionBoxLayer();
+    absBoxRef.current.enabled = false;
+    candleRef.current.attachPrimitive(absBoxRef.current);
 
     const onMove = (p: MouseEventParams<Time>) => {
       const cs = candleRef.current;
@@ -277,6 +287,7 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
         };
         const next: Record<string, number | null> = {
           delta: topOf(deltaRef.current), vol: topOf(dvolRef.current), oi: topOf(oiLineRef.current),
+          regimes: topOf(regRef.current), absorption: topOf(absPaneRef.current),
           funding: topOf(fundRef.current), stats: topOf(statsSeriesRef.current),
         };
         setPaneTops((p) => (Object.keys(next).every((k) => p[k] === next[k]) ? p : next));
@@ -294,6 +305,10 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
       dvolRef.current = null;
       rvRef.current = null;
       oiLineRef.current = null;
+      regRef.current = null;
+      regMarkRef.current = null;
+      absPaneRef.current = null;
+      absBoxRef.current = null;
       fundRef.current = null;
       statsSeriesRef.current = null;
       statsLayerRef.current = null;
@@ -414,9 +429,10 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
     const c = chartRef.current;
     if (!c) return;
     if (showOi && !oiLineRef.current) {
-      // One line, each segment coloured by that bar's regime — reads at a glance.
-      oiLineRef.current = c.addSeries(LineSeries, {
-        color: "rgba(237,237,239,0.5)", lineWidth: 2, priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false,
+      // OI candles: open / high / low / close of open interest within each bar.
+      oiLineRef.current = c.addSeries(CandlestickSeries, {
+        upColor: UP, downColor: DOWN, borderUpColor: UP, borderDownColor: DOWN, wickUpColor: UP, wickDownColor: DOWN,
+        priceLineVisible: false, lastValueVisible: true,
         priceFormat: { type: "custom", formatter: (v: number) => fmtUsd(v).replace("+", ""), minMove: 1 },
       }, c.panes().length);
       try { oiLineRef.current.priceScale().applyOptions({ scaleMargins: { top: 0.15, bottom: 0.12 } }); } catch { /* ignore */ }
@@ -427,6 +443,37 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
       relayoutPanes(c);
     }
   }, [showOi]);
+  const showReg = on(indicators.regimes), showAbs = on(indicators.absorption);
+  useEffect(() => {
+    const c = chartRef.current;
+    if (!c) return;
+    if (showReg && !regRef.current) {
+      regRef.current = c.addSeries(HistogramSeries, {
+        priceLineVisible: false, lastValueVisible: false,
+        priceFormat: { type: "custom", formatter: (v: number) => `${v.toFixed(2)}%`, minMove: 0.01 },
+      }, c.panes().length);
+      relayoutPanes(c);
+    } else if (!showReg && regRef.current) {
+      try { c.removeSeries(regRef.current); } catch { /* ignore */ }
+      regRef.current = null;
+      relayoutPanes(c);
+    }
+  }, [showReg]);
+  useEffect(() => {
+    const c = chartRef.current;
+    if (!c) return;
+    if (showAbs && !absPaneRef.current) {
+      absPaneRef.current = c.addSeries(HistogramSeries, {
+        priceLineVisible: false, lastValueVisible: false,
+        priceFormat: { type: "custom", formatter: (v: number) => fmtUsd(v), minMove: 1 },
+      }, c.panes().length);
+      relayoutPanes(c);
+    } else if (!showAbs && absPaneRef.current) {
+      try { c.removeSeries(absPaneRef.current); } catch { /* ignore */ }
+      absPaneRef.current = null;
+      relayoutPanes(c);
+    }
+  }, [showAbs]);
   useEffect(() => {
     const c = chartRef.current;
     if (!c) return;
@@ -436,7 +483,7 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
         baseValue: { type: "price", price: 0 },
         topLineColor: "rgba(31,184,128,0.9)", topFillColor1: "rgba(31,184,128,0.28)", topFillColor2: "rgba(31,184,128,0.04)",
         bottomLineColor: "rgba(239,68,68,0.9)", bottomFillColor1: "rgba(239,68,68,0.04)", bottomFillColor2: "rgba(239,68,68,0.28)",
-        lineWidth: 1, lineType: LineType.WithSteps, priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false,
+        lineWidth: 2, lineType: LineType.Simple, priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false,
         priceFormat: { type: "custom", formatter: (v: number) => `${v.toFixed(4)}%`, minMove: 0.0001 },
       }, c.panes().length);
       relayoutPanes(c);
@@ -465,7 +512,7 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
     }
   }, [showStats]);
 
-  const oiQ = useOiHistory(coin, showOi);
+  const oiQ = useOiHistory(coin, showOi || showReg);
   const fundQ = useFundingHistory(coin, showFund);
 
   // OI per bar: value at bar close + % change across the bar, coloured by regime.
@@ -475,18 +522,22 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
     const ivMs = CHART_INTERVALS[chart.interval];
     const live = of.ctx?.oiUsd ? { t: Date.now(), oi: of.ctx.oiUsd, px: of.lastPx ?? 0 } : null;
     const all = live && live.t > pts[pts.length - 1].t ? [...pts, live] : pts;
-    const out: { t: number; oi: number; chg: number; regime: ReturnType<typeof oiRegime> }[] = [];
+    const out: { t: number; o: number; h: number; l: number; oi: number; chg: number; regime: ReturnType<typeof oiRegime> }[] = [];
     let j = 0;
     let prevEnd: { t: number; oi: number } | null = null;
     for (const k of chart.candles) {
+      const startJ = j;
       while (j + 1 < all.length && all[j + 1].t <= k.t + ivMs) j++;
       const end = all[j];
       if (!end || end.t > k.t + ivMs) continue;
       if (end.t < k.t - 15 * 60_000) { prevEnd = end; continue; } // no snapshot near this bar
       const start = prevEnd;
       prevEnd = end;
+      const open = start?.oi ?? end.oi;
+      let h = Math.max(open, end.oi), l = Math.min(open, end.oi);
+      for (let q = startJ; q <= j; q++) if (all[q].t > k.t) { h = Math.max(h, all[q].oi); l = Math.min(l, all[q].oi); }
       const chg = start && start.t !== end.t && start.oi > 0 ? ((end.oi - start.oi) / start.oi) * 100 : 0;
-      out.push({ t: k.t, oi: end.oi, chg, regime: oiRegime(k.c - k.o, chg) });
+      out.push({ t: k.t, o: open, h, l, oi: end.oi, chg, regime: oiRegime(k.c - k.o, chg) });
     }
     return out;
   }, [oiQ.data, chart?.candles, chart?.interval, of.ctx?.oiUsd, of.lastPx]);
@@ -515,6 +566,30 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
     return out;
   }, [fundQ.data, chart?.candles, chart?.interval]);
 
+  // Positioning card: each regime's share of |ΔOI| over the last 24 bars, and a dot
+  // wherever the leading regime (rolling 24 bars) changes.
+  const REG_WIN = 24;
+  const regimeView = useMemo(() => {
+    const bars = oiBars;
+    const share = (xs: typeof bars) => {
+      const tot: Record<string, number> = { "long-build": 0, "short-build": 0, "short-cover": 0, "long-unwind": 0 };
+      let all = 0;
+      for (const b of xs) if (b.regime !== "flat") { tot[b.regime] += Math.abs(b.chg); all += Math.abs(b.chg); }
+      return { tot, all };
+    };
+    const dots: { t: number; regime: keyof typeof REGIME_STYLE }[] = [];
+    let leader: string | null = null;
+    for (let i = REG_WIN; i < bars.length; i++) {
+      const { tot, all } = share(bars.slice(i - REG_WIN + 1, i + 1));
+      if (all <= 0) continue;
+      const lead = Object.entries(tot).sort((a, b) => b[1] - a[1])[0][0];
+      if (leader && lead !== leader) dots.push({ t: bars[i].t, regime: lead as keyof typeof REGIME_STYLE });
+      leader = lead;
+    }
+    const { tot, all } = share(bars.slice(-REG_WIN));
+    return { share: Object.fromEntries(Object.entries(tot).map(([k2, v]) => [k2, all > 0 ? v / all : 0])), dots };
+  }, [oiBars]);
+
   const deltaByT = useMemo(() => new Map((chart?.delta ?? []).map((d) => [d.t, d])), [chart?.delta]);
   const absMarks = useMemo(() => {
     if (!on(indicators.absorption) || !chart?.candles.length) return [];
@@ -523,31 +598,53 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
 
   useEffect(() => {
     try {
-      oiLineRef.current?.setData(oiBars.map((b) => ({ time: ts(b.t), value: b.oi, color: REGIME_STYLE[b.regime].color })));
-      fundRef.current?.setData(fundBars.map((b) => ({ time: ts(b.t), value: b.rate })));
-      absMarkRef.current?.setMarkers(
-        absMarks.map((m) => ({
-          time: ts(m.t),
-          position: m.side === 1 ? "aboveBar" : "belowBar",
-          shape: m.side === 1 ? "arrowDown" : "arrowUp",
-          color: m.side === 1 ? "rgba(245,158,11,0.95)" : "rgba(56,189,248,0.95)",
-          size: 0.8,
-        })) as SeriesMarker<Time>[]
+      oiLineRef.current?.setData(oiBars.map((b) => ({ time: ts(b.t), open: b.o, high: b.h, low: b.l, close: b.oi })));
+      regRef.current?.setData(oiBars.map((b) => ({ time: ts(b.t), value: b.chg, color: REGIME_STYLE[b.regime].color })));
+      regMarkRef.current?.setMarkers(
+        showReg
+          ? (regimeView.dots.map((d) => ({ time: ts(d.t), position: "belowBar", shape: "circle", color: REGIME_STYLE[d.regime].color, size: 0.5 })) as SeriesMarker<Time>[])
+          : []
       );
+      fundRef.current?.setData(fundBars.map((b) => ({ time: ts(b.t), value: b.rate })));
+      // Absorption: delta pane with the flagged bars lit, candles boxed + dotted on the chart.
+      if (chart) {
+        const flagged = new Map(absMarks.map((m) => [m.t, m.side]));
+        absPaneRef.current?.setData(
+          chart.candles.filter((k) => deltaByT.has(k.t)).map((k) => {
+            const d = deltaByT.get(k.t)!;
+            const f = flagged.get(k.t);
+            const color = f ? (f === 1 ? "rgba(245,158,11,1)" : "rgba(56,189,248,1)") : d.net >= 0 ? "rgba(31,184,128,0.28)" : "rgba(239,68,68,0.28)";
+            return { time: ts(k.t), value: d.net, color };
+          })
+        );
+        const box = absBoxRef.current;
+        if (box) {
+          box.enabled = showAbs;
+          box.times = chart.candles.map((k) => k.t);
+          box.iv = CHART_INTERVALS[chart.interval];
+          const byT = new Map(chart.candles.map((k) => [k.t, k]));
+          box.boxes = absMarks.map((m) => ({ t: m.t, h: byT.get(m.t)?.h ?? 0, l: byT.get(m.t)?.l ?? 0, side: m.side }));
+          box.refresh();
+        }
+      }
       const st = statsLayerRef.current;
       if (st && chart) {
         const k = chart.candles;
         statsSeriesRef.current?.setData(k.map((c) => ({ time: ts(c.t), value: 0 })));
         st.times = k.map((c) => c.t);
         st.iv = CHART_INTERVALS[chart.interval];
+        let cvd = 0, day = -1;
         st.stats = k.map((c) => {
           const d = deltaByT.get(c.t);
-          return { t: c.t, vol: c.v * c.c, delta: d ? d.net : null, buy: d?.buy ?? 0, sell: d?.sell ?? 0 };
+          const dd = Math.floor(c.t / 86_400_000);
+          if (dd !== day) { day = dd; cvd = 0; } // session CVD resets each UTC day
+          if (d) cvd += d.net;
+          return { t: c.t, vol: c.v * c.c, delta: d ? d.net : null, buy: d?.buy ?? 0, sell: d?.sell ?? 0, cvd: d ? cvd : null };
         });
         st.refresh();
       }
     } catch { /* ignore */ }
-  }, [oiBars, fundBars, absMarks, deltaByT, chart, showOi, showFund, showStats]);
+  }, [oiBars, fundBars, absMarks, deltaByT, chart, showOi, showFund, showStats, showReg, showAbs, regimeView]);
 
   // ── Gamma levels: flip + biggest dealer-gamma strikes as price lines ──
   useEffect(() => {
@@ -789,9 +886,16 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
       }
       case "oi": {
         const last = oiBars[oiBars.length - 1];
-        const at = atT != null ? oiBars.find((b) => b.t === atT) : last;
+        const at = atT != null ? oiBars.find((b) => b.t === atT) ?? last : last;
         if (!at) return oiQ.isLoading ? "loading" : "no history yet";
-        return `${fmtUsd(at.oi).replace("+", "")} · ${at.chg >= 0 ? "+" : ""}${at.chg.toFixed(2)}% · ${REGIME_STYLE[at.regime].label}`;
+        const u = (v: number) => fmtUsd(v).replace("+", "");
+        return `O ${u(at.o)}  H ${u(at.h)}  L ${u(at.l)}  C ${u(at.oi)}`;
+      }
+      case "regimes": {
+        const last = oiBars[oiBars.length - 1];
+        const at = atT != null ? oiBars.find((b) => b.t === atT) ?? last : last;
+        if (!at) return oiQ.isLoading ? "loading" : "no history yet";
+        return `${at.chg >= 0 ? "+" : ""}${at.chg.toFixed(2)}% · ${REGIME_STYLE[at.regime].label}`;
       }
       case "funding": {
         let at = fundBars[fundBars.length - 1];
@@ -801,7 +905,8 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
       }
       case "absorption": {
         const n = absMarks.length;
-        return `${n} mark${n === 1 ? "" : "s"} · ▲ sellers absorbed · ▼ buyers absorbed`;
+        const last = chart?.delta[chart.delta.length - 1];
+        return `${n} flagged${last ? ` · Δ ${fmtUsd(last.net)}` : ""}`;
       }
       case "barstats": return chart?.deltaSource === "live" ? "delta since tab opened" : "";
       case "gex": {
@@ -813,7 +918,7 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
     }
   };
 
-  const LOWER: IndicatorId[] = ["delta", "cvd", "dvol", "rv", "oi", "funding", "barstats"];
+  const LOWER: IndicatorId[] = ["delta", "cvd", "dvol", "rv", "oi", "regimes", "funding", "barstats", "absorption"];
   const priceInds = INDICATORS.filter((i) => !LOWER.includes(i.id) && indicators[i.id] !== "off");
   const lowerInds = INDICATORS.filter((i) => (i.id === "delta" || i.id === "cvd") && indicators[i.id] !== "off");
   const volInds = INDICATORS.filter((i) => (i.id === "dvol" || i.id === "rv") && indicators[i.id] !== "off");
@@ -863,6 +968,19 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
 
       {/* Legend — lower pane */}
       {paneLegend("oi", paneTops.oi)}
+      {paneLegend("regimes", paneTops.regimes)}
+      {paneLegend("absorption", paneTops.absorption)}
+      {showReg && paneTops.regimes != null && (
+        <div className="absolute right-[72px] z-20 pointer-events-none select-none rounded-md border border-border bg-[#070709]/90 px-2.5 py-1.5 text-[11px] min-w-[150px]" style={{ top: paneTops.regimes + 4 }}>
+          <div className="text-txt-muted mb-0.5">Positioning · last {REG_WIN} bars</div>
+          {(["long-build", "short-build", "short-cover", "long-unwind"] as const).map((r) => (
+            <div key={r} className="flex items-center justify-between gap-3 ds-num">
+              <span className="flex items-center gap-1.5 text-txt-secondary"><span className="w-1.5 h-1.5 rounded-sm" style={{ background: REGIME_STYLE[r].color }} />{REGIME_STYLE[r].label}</span>
+              <span className="text-txt-primary">{Math.round((regimeView.share[r] ?? 0) * 100)}%</span>
+            </div>
+          ))}
+        </div>
+      )}
       {paneLegend("funding", paneTops.funding)}
       {lowerInds.length > 0 && paneTops.delta != null && (
         <div className="absolute left-1.5 z-20 pointer-events-none select-none flex flex-col gap-0.5 rounded-md bg-[#070709]/80 px-1.5" style={{ top: paneTops.delta + 4 }}>
@@ -916,7 +1034,7 @@ function relayoutPanes(c: IChartApi) {
     const lower = [...Array(n).keys()].slice(1);
     const statsN = lower.filter(isStats).length;
     const main = n === 2 ? 0.75 : 0.62;
-    const statsF = 0.07;
+    const statsF = 0.1;
     const otherN = lower.length - statsN;
     const mainF = otherN === 0 ? 1 - statsF * statsN : main;
     panes[0].setStretchFactor(mainF);

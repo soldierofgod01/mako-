@@ -303,56 +303,47 @@ export class FootprintLayer extends Layer {
 // ─── Bubbles ─────────────────────────────────────────────────────
 export class BubbleLayer extends Layer {
   prints: Trade[] = [];
-  /** Threshold the prints were filtered at — bubble size is relative to it, not to the biggest print. */
+  /** Threshold the prints were filtered at — the smallest bubble. */
   minUsd = 25_000;
   private view = new View("top", (target) => this.drawBubbles(target));
   paneViews() { return this.enabled ? [this.view] : []; }
 
+  // One bubble per big order at its average price. Area grows with size
+  // (radius ∝ √size), colour by the side that hit, size printed inside when
+  // it fits, beside it otherwise.
   private drawBubbles(target: Target) {
     const tm = this.timeMap();
     const s = this.series;
     if (!tm || !s || !this.prints.length) return;
-    // Narrow bars (15m+ zoomed out): merge prints per bar + side + ~0.1% price row,
-    // otherwise every print since the tab opened piles into the last candle.
-    let prints = this.prints;
-    if (tm.spacing < 14) {
-      const m = new Map<string, Trade>();
-      for (const p of prints) {
-        const bt = Math.floor(p.t / this.iv) * this.iv;
-        const row = Math.round(Math.log(p.px) / 0.001);
-        const key = `${bt}|${p.side}|${row}`;
-        const e = m.get(key);
-        if (e) {
-          const usd = e.usd + p.usd, sz = e.sz + p.sz;
-          m.set(key, { t: bt + this.iv / 2, side: p.side, usd, sz, px: usd / sz });
-        } else m.set(key, { ...p, t: bt + this.iv / 2 });
-      }
-      prints = [...m.values()];
-    }
-    const rCap = Math.max(6, Math.min(24, tm.spacing * 1.8));
-    // Smallest first so the big ones sit on top.
-    const sorted = [...prints].sort((a, b) => a.usd - b.usd);
+    const sorted = [...this.prints].sort((a, b) => a.usd - b.usd);
     target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
-      ctx.font = `600 10px Inter, -apple-system, sans-serif`;
-      ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       for (const p of sorted) {
         const x = tm.x(p.t);
         const y = s.priceToCoordinate(p.px);
-        if (x == null || y == null || x < -30 || x > mediaSize.width + 30) continue;
-        const rel = p.usd / this.minUsd;
-        const r = Math.min(rCap, 3.5 + 4.5 * Math.log2(1 + rel));
+        if (x == null || y == null || x < -40 || x > mediaSize.width + 40) continue;
+        const r = Math.min(30, 3 * Math.sqrt(p.usd / this.minUsd));
         const buy = p.side === 1;
         ctx.beginPath();
         ctx.arc(x, y, r, 0, Math.PI * 2);
-        ctx.fillStyle = buy ? `rgba(31,184,128,${rel >= 4 ? 0.38 : 0.24})` : `rgba(239,68,68,${rel >= 4 ? 0.38 : 0.24})`;
+        ctx.fillStyle = buy ? "rgba(31,184,128,0.35)" : "rgba(239,68,68,0.35)";
         ctx.fill();
         ctx.lineWidth = 1;
-        ctx.strokeStyle = buy ? "rgba(31,184,128,0.9)" : "rgba(239,68,68,0.9)";
+        ctx.strokeStyle = buy ? "rgba(31,184,128,0.95)" : "rgba(239,68,68,0.95)";
         ctx.stroke();
-        if (rel >= 4 && r >= 10) {
-          ctx.fillStyle = "rgba(237,237,239,0.95)";
-          ctx.fillText(k(p.usd), x, y);
+        if (p.usd >= this.minUsd * 3) {
+          const label = k(p.usd);
+          ctx.font = `600 10px Inter, -apple-system, sans-serif`;
+          const tw = ctx.measureText(label).width;
+          if (tw + 6 <= r * 2) {
+            ctx.textAlign = "center";
+            ctx.fillStyle = "rgba(237,237,239,0.95)";
+            ctx.fillText(label, x, y);
+          } else {
+            ctx.textAlign = "left";
+            ctx.fillStyle = buy ? "rgba(31,184,128,1)" : "rgba(239,68,68,1)";
+            ctx.fillText(label, x + r + 3, y);
+          }
         }
       }
     });
@@ -360,8 +351,11 @@ export class BubbleLayer extends Layer {
 }
 
 // ─── Bar statistics (MotiveWave-style rows under the chart) ──────
-export interface BarStat { t: number; vol: number; delta: number | null; buy: number; sell: number }
+export interface BarStat { t: number; vol: number; delta: number | null; buy: number; sell: number; cvd: number | null }
 
+export const BAR_STAT_ROWS = ["Volume", "Delta", "Delta %", "CVD"] as const;
+
+/** Heat-cell table docked under the price pane: one column per bar, one row per statistic. */
 export class BarStatsLayer extends Layer {
   stats: BarStat[] = [];
   private view = new View("top", (target) => this.drawStats(target));
@@ -370,71 +364,85 @@ export class BarStatsLayer extends Layer {
   private drawStats(target: Target) {
     const tm = this.timeMap();
     if (!tm || !this.stats.length) return;
-    const vols = this.stats.map((x) => x.vol).sort((a, b) => a - b);
-    const vP90 = vols[Math.floor(vols.length * 0.9)] || 1;
-    const ds = this.stats.filter((x) => x.delta != null).map((x) => Math.abs(x.delta!)).sort((a, b) => a - b);
-    const dP90 = ds[Math.floor(ds.length * 0.9)] || 1;
+    const p90 = (xs: number[]) => { const a = xs.filter((x) => isFinite(x)).map(Math.abs).sort((x, y) => x - y); return a[Math.floor(a.length * 0.9)] || 1; };
+    const vP = p90(this.stats.map((x) => x.vol));
+    const dP = p90(this.stats.filter((x) => x.delta != null).map((x) => x.delta!));
+    const cP = p90(this.stats.filter((x) => x.cvd != null).map((x) => x.cvd!));
+    const heat = (v: number, scale: number) => Math.min(1, Math.abs(v) / scale);
     target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
-      const w = tm.spacing;
-      const text = w >= 34;
-      // Zoomed out, three rows of colour is just noise: show one quiet delta row.
-      if (!text) {
-        const H = mediaSize.height;
-        for (const b of this.stats) {
-          if (b.delta == null) continue;
-          const xc = tm.barX(b.t);
-          if (xc == null || xc + w < 0 || xc - w > mediaSize.width) continue;
-          const a = (0.05 + 0.5 * Math.min(1, Math.abs(b.delta) / dP90)).toFixed(3);
-          const hh = Math.max(2, (H - 6) * Math.min(1, Math.abs(b.delta) / dP90));
-          ctx.fillStyle = b.delta >= 0 ? `rgba(31,184,128,${a})` : `rgba(239,68,68,${a})`;
-          ctx.fillRect(xc - Math.max(0.5, w * 0.35), H - 3 - hh, Math.max(1, w * 0.7), hh);
-        }
-        ctx.font = `10px "JetBrains Mono", monospace`;
-        ctx.textBaseline = "middle";
-        ctx.fillStyle = "rgba(7,7,9,0.85)";
-        ctx.fillRect(0, 2, 92, 14);
-        ctx.fillStyle = "rgba(155,155,160,0.95)";
-        ctx.fillText("Δ per bar · zoom in", 5, 9);
-        return;
-      }
-      const rows = 3;
+      const rows = BAR_STAT_ROWS.length;
       const rh = mediaSize.height / rows;
-      ctx.font = `${Math.min(10.5, rh - 6)}px "JetBrains Mono", monospace`;
+      const w = tm.spacing;
+      const text = w >= 38 && rh >= 12;
+      ctx.font = `${Math.min(10.5, rh - 4)}px "JetBrains Mono", monospace`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       for (const b of this.stats) {
         const xc = tm.barX(b.t);
         if (xc == null || xc + w < 0 || xc - w > mediaSize.width) continue;
-        const x0 = xc - w / 2 + 0.5;
-        const cw = Math.max(1, w - 1);
-        // Row 0 — volume
-        ctx.fillStyle = `rgba(155,155,160,${(0.06 + 0.3 * Math.min(1, b.vol / vP90)).toFixed(3)})`;
-        ctx.fillRect(x0, 0.5, cw, rh - 1);
-        // Rows 1–2 — delta and delta %
-        if (b.delta != null) {
-          const a = (0.08 + 0.55 * Math.min(1, Math.abs(b.delta) / dP90)).toFixed(3);
-          ctx.fillStyle = b.delta >= 0 ? `rgba(31,184,128,${a})` : `rgba(239,68,68,${a})`;
-          ctx.fillRect(x0, rh + 0.5, cw, rh - 1);
-          ctx.fillRect(x0, 2 * rh + 0.5, cw, rh - 1);
-        }
-        if (text) {
-          ctx.fillStyle = "rgba(237,237,239,0.9)";
-          ctx.fillText(k(b.vol) || "0", xc, rh / 2);
-          if (b.delta != null) {
-            const tot = b.buy + b.sell;
-            ctx.fillText(`${b.delta < 0 ? "−" : ""}${k(b.delta) || "0"}`, xc, rh * 1.5);
-            ctx.fillText(tot > 0 ? `${Math.round((b.delta / tot) * 100)}%` : "—", xc, rh * 2.5);
+        const x0 = xc - w / 2;
+        const cw = w + 0.6; // contiguous cells, no gaps
+        const tot = b.buy + b.sell;
+        const cells: [string, string | null][] = [
+          [`rgba(170,170,178,${(0.08 + 0.62 * heat(b.vol, vP)).toFixed(3)})`, k(b.vol) || "0"],
+          b.delta == null ? ["rgba(0,0,0,0)", null] : [b.delta >= 0 ? `rgba(31,184,128,${(0.1 + 0.8 * heat(b.delta, dP)).toFixed(3)})` : `rgba(239,68,68,${(0.1 + 0.8 * heat(b.delta, dP)).toFixed(3)})`, `${b.delta < 0 ? "−" : ""}${k(b.delta) || "0"}`],
+          b.delta == null || tot <= 0 ? ["rgba(0,0,0,0)", null] : (() => { const pct = b.delta! / tot; return [pct >= 0 ? `rgba(31,184,128,${(0.1 + 0.8 * Math.min(1, Math.abs(pct) / 0.5)).toFixed(3)})` : `rgba(239,68,68,${(0.1 + 0.8 * Math.min(1, Math.abs(pct) / 0.5)).toFixed(3)})`, `${Math.round(pct * 100)}%`] as [string, string]; })(),
+          b.cvd == null ? ["rgba(0,0,0,0)", null] : [b.cvd >= 0 ? `rgba(31,184,128,${(0.1 + 0.7 * heat(b.cvd, cP)).toFixed(3)})` : `rgba(239,68,68,${(0.1 + 0.7 * heat(b.cvd, cP)).toFixed(3)})`, `${b.cvd < 0 ? "−" : ""}${k(b.cvd) || "0"}`],
+        ];
+        cells.forEach(([fill, label], i) => {
+          ctx.fillStyle = fill;
+          ctx.fillRect(x0, i * rh, cw, rh - (i < rows - 1 ? 1 : 0));
+          if (text && label) {
+            ctx.fillStyle = "rgba(237,237,239,0.92)";
+            ctx.fillText(label, xc, i * rh + rh / 2);
           }
-        }
+        });
       }
-      // Row labels on a backdrop at the left edge.
+      // Row labels pinned to the left edge.
       ctx.textAlign = "left";
-      ["Vol", "Δ", "Δ%"].forEach((l, i) => {
-        ctx.fillStyle = "rgba(7,7,9,0.85)";
-        ctx.fillRect(0, i * rh + 1, 30, rh - 2);
-        ctx.fillStyle = "rgba(155,155,160,0.95)";
+      ctx.font = `10px Inter, -apple-system, sans-serif`;
+      BAR_STAT_ROWS.forEach((l, i) => {
+        ctx.fillStyle = "rgba(7,7,9,0.88)";
+        ctx.fillRect(0, i * rh, 52, rh - 1);
+        ctx.fillStyle = "rgba(170,170,178,0.95)";
         ctx.fillText(l, 6, i * rh + rh / 2);
       });
+    });
+  }
+}
+
+// ─── Absorption: box + dot around the flagged candles ────────────
+export class AbsorptionBoxLayer extends Layer {
+  boxes: { t: number; h: number; l: number; side: 1 | -1 }[] = [];
+  private view = new View("top", (target) => this.drawBoxes(target));
+  paneViews() { return this.enabled ? [this.view] : []; }
+
+  private drawBoxes(target: Target) {
+    const tm = this.timeMap();
+    const s = this.series;
+    if (!tm || !s || !this.boxes.length) return;
+    target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
+      const w = Math.max(5, tm.spacing * 0.95);
+      for (const b of this.boxes) {
+        const xc = tm.barX(b.t);
+        const yh = s.priceToCoordinate(b.h);
+        const yl = s.priceToCoordinate(b.l);
+        if (xc == null || yh == null || yl == null || xc < -20 || xc > mediaSize.width + 20) continue;
+        // Buyers absorbed (side +1) is bearish → amber; sellers absorbed → sky.
+        const col = b.side === 1 ? "245,158,11" : "56,189,248";
+        const top = Math.min(yh, yl) - 3, bot = Math.max(yh, yl) + 3;
+        ctx.setLineDash([2, 2]);
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = `rgba(${col},0.9)`;
+        ctx.strokeRect(xc - w / 2, top, w, bot - top);
+        ctx.setLineDash([]);
+        ctx.fillStyle = `rgba(${col},0.1)`;
+        ctx.fillRect(xc - w / 2, top, w, bot - top);
+        ctx.beginPath();
+        ctx.arc(xc, b.side === 1 ? top - 5 : bot + 5, 2.2, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${col},1)`;
+        ctx.fill();
+      }
     });
   }
 }
