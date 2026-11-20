@@ -601,10 +601,17 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
   const candleQuery = useQuery({
     queryKey: ["chart-candles", coin, chartInterval],
     queryFn: async (): Promise<{ coin: string; interval: string; candles: Candle[]; profile: Candle[] }> => {
-      const res = await fetch(`/api/candles?coin=${encodeURIComponent(coin)}&interval=${chartInterval}`);
-      if (!res.ok) throw new Error("candles failed");
-      return res.json();
+      // Straight from the browser first: HL rate-limits (429) Vercel's shared server
+      // IPs, but each visitor has their own budget. The server route is the fallback.
+      try {
+        return await browserCandles(coin, chartInterval);
+      } catch {
+        const res = await fetch(`/api/candles?coin=${encodeURIComponent(coin)}&interval=${chartInterval}`);
+        if (!res.ok) throw new Error("candles failed");
+        return res.json();
+      }
     },
+    retry: 2,
     refetchInterval: 5 * 60_000,
     refetchOnWindowFocus: false,
   });
@@ -793,4 +800,24 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
   }, []);
 
   return { ...state, live };
+}
+
+/** Same window as /api/candles: chart history reaching back to the UTC day start, plus today's 1m candles. */
+async function browserCandles(coin: string, interval: ChartInterval) {
+  const snap = async (iv: string, startTime: number, endTime: number): Promise<Candle[]> => {
+    const res = await fetch("https://api.hyperliquid.xyz/info", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ type: "candleSnapshot", req: { coin, interval: iv, startTime, endTime } }),
+    });
+    if (!res.ok) throw new Error(`HL ${res.status}`);
+    const raw = (await res.json()) as { t: number; o: string; h: string; l: string; c: string; v: string }[];
+    return (Array.isArray(raw) ? raw : []).map((k) => ({ t: k.t, o: +k.o, h: +k.h, l: +k.l, c: +k.c, v: +k.v }));
+  };
+  const now = Date.now();
+  const dayStart = Math.floor(now / 86_400_000) * 86_400_000;
+  const start = Math.min(dayStart, now - 400 * CHART_INTERVALS[interval]);
+  const [candles, profile] = await Promise.all([snap(interval, start, now), snap("1m", dayStart, now)]);
+  if (!candles.length) throw new Error("no candles");
+  return { coin, interval, candles, profile };
 }
