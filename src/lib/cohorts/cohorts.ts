@@ -68,7 +68,11 @@ export interface WalletPosition {
   coin: string;
   notionalUsd: number; // signed: + long, − short
   liqPx?: number | null;
+  entryPx?: number | null;
 }
+
+/** One tracked position's cost basis: [entry price, signed notional USD, 0 = sharp | 1 = donor]. */
+export type CostEntry = [number, number, 0 | 1];
 
 /** A price where tracked wallets get liquidated (clustered within 0.3%). */
 export interface LiqLevel {
@@ -94,6 +98,8 @@ export interface CoinCohorts {
   donors: CohortSide;
   divergence: number;   // [-100, 100]  + = sharps longer than donors
   liqLevels: LiqLevel[];
+  /** Entry prices of every tracked position in this coin (for the cost-basis view). */
+  entries?: CostEntry[];
 }
 
 const LIQ_CLUSTER = 0.003;
@@ -172,6 +178,18 @@ export function buildCoinCohorts(sharpPositions: WalletPosition[][], donorPositi
   addLiqs(sharpPositions, true);
   addLiqs(donorPositions, false);
 
+  const entries = new Map<string, CostEntry[]>();
+  const addEntries = (list: WalletPosition[][], cohort: 0 | 1) => {
+    for (const positions of list) for (const p of positions) {
+      if (!p.entryPx || !p.notionalUsd) continue;
+      const arr = entries.get(p.coin) ?? [];
+      arr.push([p.entryPx, Math.round(p.notionalUsd), cohort]);
+      entries.set(p.coin, arr);
+    }
+  };
+  addEntries(sharpPositions, 0);
+  addEntries(donorPositions, 1);
+
   const result: Record<string, CoinCohorts> = {};
   for (const coin of coins) {
     const s = sharps.get(coin) ?? emptySide();
@@ -181,6 +199,7 @@ export function buildCoinCohorts(sharpPositions: WalletPosition[][], donorPositi
       donors: d,
       divergence: Math.round(((s.net - d.net) / 2) * 100),
       liqLevels: clusterLiqs(liqRaw.get(coin) ?? []),
+      entries: entries.get(coin) ?? [],
     };
   }
   return result;

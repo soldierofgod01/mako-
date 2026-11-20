@@ -8,14 +8,18 @@ import { cn } from "@/lib/utils";
 import { fmtPrice } from "@/lib/bias/format";
 import type { VolState } from "@/lib/vol/use-vol";
 import { VolPanel } from "./vol-panel";
+import { CostBasisPanel, PulsePanel } from "./pulse-panel";
+import type { LiveFeed } from "@/lib/bias/live-feed";
 
 // ════════════════════════════════════════════════════════════════
 // Bottom panel — secondary context in tabs, like an exchange terminal's
 // positions/orders strip. Drag the top edge to resize; collapse to a bar.
 // ════════════════════════════════════════════════════════════════
 
-type TabId = "vol" | "cohorts" | "liqs" | "prints" | "log";
+type TabId = "pulse" | "basis" | "vol" | "cohorts" | "liqs" | "prints" | "log";
 const TABS: { id: TabId; label: string }[] = [
+  { id: "pulse", label: "Market pulse" },
+  { id: "basis", label: "Trader cost basis" },
   { id: "vol", label: "Volatility" },
   { id: "cohorts", label: "Sharps vs donors" },
   { id: "liqs", label: "Liquidation levels" },
@@ -27,7 +31,7 @@ const MAX_H = 460;
 const DEFAULT_H = 280;
 const usd = (x: number) => fmtUsd(x).replace("+", "");
 
-export function BottomPanel({ of, vol }: { of: OrderflowState; vol: VolState }) {
+export function BottomPanel({ of, vol, coin }: { of: OrderflowState & { live?: LiveFeed }; vol: VolState; coin: string }) {
   const [tab, setTab] = useState<TabId>("vol");
   const [open, setOpen] = useState(true);
   const [h, setH] = useState(DEFAULT_H);
@@ -92,6 +96,8 @@ export function BottomPanel({ of, vol }: { of: OrderflowState; vol: VolState }) 
       </div>
       {open && (
         <div className="flex-1 min-h-0 overflow-y-auto">
+          {tab === "pulse" && <PulsePanel of={of} vol={vol} feed={of.live} coin={coin} />}
+          {tab === "basis" && <CostBasisPanel of={of} />}
           {tab === "vol" && <VolPanel vol={vol} px={of.lastPx} />}
           {tab === "cohorts" && <Cohorts of={of} />}
           {tab === "liqs" && <Liqs of={of} />}
