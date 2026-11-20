@@ -970,8 +970,8 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
       {paneLegend("oi", paneTops.oi)}
       {paneLegend("regimes", paneTops.regimes)}
       {paneLegend("absorption", paneTops.absorption)}
-      {showReg && paneTops.regimes != null && (
-        <div className="absolute right-[72px] z-20 pointer-events-none select-none rounded-md border border-border bg-[#070709]/90 px-2.5 py-1.5 text-[11px] min-w-[150px]" style={{ top: paneTops.regimes + 4 }}>
+      {showReg && (
+        <div className="absolute right-[78px] top-2 z-20 pointer-events-none select-none rounded-md border border-border bg-[#070709]/90 px-2.5 py-1.5 text-[11px] min-w-[150px]">
           <div className="text-txt-muted mb-0.5">Positioning · last {REG_WIN} bars</div>
           {(["long-build", "short-build", "short-cover", "long-unwind"] as const).map((r) => (
             <div key={r} className="flex items-center justify-between gap-3 ds-num">
