@@ -53,11 +53,11 @@ function useDepth(coin: string) {
 }
 
 const BAND_TONE: Record<Band, string> = {
-  low: "text-[#60A5FA] bg-[#60A5FA]/10",
-  lower: "text-txt-secondary bg-white/[0.05]",
-  mid: "text-txt-secondary bg-white/[0.05]",
-  upper: "text-txt-secondary bg-white/[0.05]",
-  high: "text-warning bg-warning/10",
+  low: "text-txt-primary bg-white/[0.10]",
+  lower: "text-txt-muted bg-white/[0.04]",
+  mid: "text-txt-muted bg-white/[0.04]",
+  upper: "text-txt-muted bg-white/[0.04]",
+  high: "text-txt-primary bg-white/[0.10]",
 };
 
 export function PulsePanel({ of, vol, coin }: { of: OrderflowState; vol: VolState; coin: string }) {
@@ -78,7 +78,7 @@ export function PulsePanel({ of, vol, coin }: { of: OrderflowState; vol: VolStat
             <div className="flex items-baseline justify-between px-0.5">
               <span className="text-[12.5px] font-semibold text-txt-primary">{g.label}</span>
               <span className="text-[11px] text-txt-muted">
-                {sum.level ? <span className={cn("font-medium", sum.level === "High" ? "text-warning" : sum.level === "Low" ? "text-[#60A5FA]" : "text-txt-secondary")}>{sum.level}</span> : "live"}
+                {sum.level ? <span className={cn("font-medium", sum.level === "Moderate" ? "text-txt-secondary" : "text-txt-primary")}>{sum.level}</span> : "live"}
                 {sum.trend && <span> · {sum.trend}</span>}
               </span>
             </div>
@@ -177,7 +177,7 @@ export function CostBasisPanel({ of }: { of: OrderflowState }) {
         </div>
         <div>
           <div className="text-[10.5px] text-txt-muted">Underwater</div>
-          <div className={cn("ds-num text-[15px] font-semibold", (s.underShare ?? 0) > 0.6 ? "text-warning" : "text-txt-primary")}>
+          <div className={cn("ds-num text-[15px] font-semibold", "text-txt-primary")}>
             {s.underShare != null ? `${Math.round(s.underShare * 100)}%` : "—"}
           </div>
           <div className="text-[10.5px] text-txt-dim">of {long ? "long" : "short"} notional</div>
