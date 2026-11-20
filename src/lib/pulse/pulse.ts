@@ -208,7 +208,12 @@ export function buildPulse(x: PulseInputs): PulseMetric[] {
       id: "funding", group: "perps", label: "Funding (7d avg, APR)", value: now, display: signed(now, 1, "%"),
       change: prev != null ? signed(now - prev, 1, " pts") : null, changeSign: sgn(prev != null ? now - prev : null),
       pct, window: `vs ${Math.min(90, avg7.length)}d`,
-      read: now > 15 || (pct != null && pct > 80) ? "Longs paying up — the long side is crowded." : now < -5 || (pct != null && pct < 20) ? "Shorts paying — short side crowded or hedged; squeeze fuel." : "Funding neutral — no crowding.",
+      // Sign decides who pays; the band says whether that's unusual for this coin.
+      read: now < 0
+        ? now < -5 ? "Shorts paying — the short side is crowded; squeeze fuel." : "Slightly negative — shorts paying a little."
+        : now > 15 || (pct != null && pct > 80) ? "Longs paying up — the long side is crowded."
+        : pct != null && pct < 20 ? "Longs still pay, but far less than usual — long appetite has cooled."
+        : "Funding normal — no crowding.",
     });
   }
 
