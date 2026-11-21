@@ -17,7 +17,7 @@ export async function GET(req: Request) {
     const since = new Date(Date.now() - 5 * 60_000).toISOString();
     const rows = await supabaseSelect<Row[]>(
       "flow_bias",
-      `select=horizon,t,score,raw,direction,coverage,sig&coin=eq.${encodeURIComponent(coin)}&t=gt.${encodeURIComponent(since)}&order=t.desc&limit=12`
+      `select=horizon,t,score,raw,direction,coverage,sig&coin=eq.${encodeURIComponent(coin)}&horizon=in.(5m,15m,1h)&t=gt.${encodeURIComponent(since)}&order=t.desc&limit=12`
     );
     const out: Record<string, RecorderRead> = {};
     for (const r of rows) {

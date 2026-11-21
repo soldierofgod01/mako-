@@ -9,6 +9,8 @@ import { DEFAULT_INDICATORS, INDICATORS, OrderflowChart, PARKED_INDICATORS, type
 import { OrderBookPanel } from "./order-book";
 import { BottomPanel } from "./bottom-panel";
 import { useVol } from "@/lib/vol/use-vol";
+import { useRegime } from "@/lib/bias/use-regime";
+import { RegimeCard, RegimeChip } from "./regime-card";
 import { TokenIcon } from "@/components/scanner/token-icon";
 import { fmtUsd, WARMUP_MINUTES, type BiasResult, type Signal } from "@/lib/bias/engine";
 import { fmtPrice } from "@/lib/bias/format";
@@ -17,7 +19,10 @@ import { cn } from "@/lib/utils";
 export { fmtPrice };
 
 // ════════════════════════════════════════════════════════════════
-// Terminal — pick a coin, read its order flow, get a directional bias.
+// Terminal — pick a coin, read its range regime and order flow.
+// Headline (bias v2, Nov 2026): range regime — will the range break or hold.
+// It has a measured edge; the long/short flow lean did not, so it is shown
+// below as context only.
 // Layout (exchange-terminal style, Nov 2026):
 //   market bar
 //   chart (own toolbar) │ live order book │ bias + evidence
@@ -82,10 +87,11 @@ export function BiasModule() {
   const of = useOrderflow(biasCoin, interval);
   const liqLevels = of.cohorts?.data?.liqLevels ?? [];
   const vol = useVol(biasCoin, of.ctx?.markPx ?? of.lastPx, CHART_INTERVALS[interval]);
+  const regime = useRegime(biasCoin);
 
   return (
     <div className="flex-1 flex flex-col gap-2 overflow-hidden">
-      <MarketBar coin={biasCoin} onPick={setBiasCoin} of={of} panelOpen={panelOpen} onTogglePanel={togglePanel} />
+      <MarketBar coin={biasCoin} onPick={setBiasCoin} of={of} regime={regime} panelOpen={panelOpen} onTogglePanel={togglePanel} />
       <div className="flex-1 flex gap-2 min-h-0">
         <div className="flex-1 min-w-0 flex flex-col gap-2">
           <div className="flex-1 min-h-0 flex gap-2">
@@ -104,6 +110,7 @@ export function BiasModule() {
         {panelOpen && (
           <aside className="terminal-side w-[320px] xl:w-[340px] shrink-0 overflow-y-auto rounded-xl">
             <div className="flex flex-col gap-2">
+              <RegimeCard regime={regime} />
               <BiasCard bias={of.bias} of={of} />
               <EvidenceList bias={of.bias} />
             </div>
@@ -117,8 +124,8 @@ export function BiasModule() {
 
 // ─── Market bar ─────────────────────────────────────────────────
 
-function MarketBar({ coin, onPick, of, panelOpen, onTogglePanel }: {
-  coin: string; onPick: (c: string) => void; of: OrderflowState; panelOpen: boolean; onTogglePanel: () => void;
+function MarketBar({ coin, onPick, of, regime, panelOpen, onTogglePanel }: {
+  coin: string; onPick: (c: string) => void; of: OrderflowState; regime: ReturnType<typeof useRegime>; panelOpen: boolean; onTogglePanel: () => void;
 }) {
   const ctx = of.ctx;
   const countdown = useFundingCountdown();
@@ -153,7 +160,7 @@ function MarketBar({ coin, onPick, of, panelOpen, onTogglePanel }: {
         tone={fundingPct == null ? undefined : fundingPct * 8 > 0.03 ? "neg" : fundingPct * 8 < -0.01 ? "pos" : undefined}
       />
       <div className="ml-auto flex items-center gap-2">
-        <BiasChip bias={of.bias} />
+        <RegimeChip regime={regime} />
         <button
           onClick={onTogglePanel}
           title={panelOpen ? "Hide bias panel" : "Show bias panel"}
@@ -180,25 +187,6 @@ function Stat({ label, value, tone, wide }: { label: string; value: string; tone
     </div>
   );
 }
-
-/** Compact verdict so the read is visible even with the panel closed. */
-function BiasChip({ bias }: { bias: BiasResult | null }) {
-  if (!bias) return null;
-  const warming = bias.warmingUp;
-  const dir = bias.direction;
-  const cls = warming || dir === "neutral"
-    ? "text-txt-secondary bg-white/[0.05]"
-    : dir === "long" ? "text-positive bg-positive/10" : "text-negative bg-negative/10";
-  return (
-    <span className={cn("h-8 px-3 rounded-full flex items-center gap-2 text-[12px] font-medium", cls)}>
-      <span className={cn("w-1.5 h-1.5 rounded-full", warming ? "bg-warning animate-pulse" : dir === "long" ? "bg-positive" : dir === "short" ? "bg-negative" : "bg-txt-muted")} />
-      {warming ? "Reading tape" : dir === "neutral" ? "Neutral" : dir === "long" ? "Long bias" : "Short bias"}
-      {!warming && <span className="ds-num opacity-80">{bias.score > 0 ? "+" : ""}{bias.score}</span>}
-    </span>
-  );
-}
-
-// ─── Chart toolbar ──────────────────────────────────────────────
 
 function ChartToolbar({ interval, onInterval, indicators, setIndicators }: {
   interval: ChartInterval; onInterval: (i: ChartInterval) => void;
@@ -473,23 +461,20 @@ function BiasCard({ bias, of }: { bias: BiasResult | null; of: OrderflowState })
   if (!bias) {
     return <div className="ds-panel ds-panel-signature h-[190px] skeleton" />;
   }
-  const dirText = bias.direction === "long" ? "Long bias" : bias.direction === "short" ? "Short bias" : "Neutral";
+  const dirText = bias.direction === "long" ? "Leaning long" : bias.direction === "short" ? "Leaning short" : "Neutral";
   const dirColor = bias.direction === "long" ? "text-positive" : bias.direction === "short" ? "text-negative" : "text-txt-secondary";
   const markerLeft = `${(bias.score + 100) / 2}%`;
   const warm = Math.min(1, bias.tapeMinutes / WARMUP_MINUTES);
-  // Accent light only when the read is directional — colour means something.
-  const glow =
-    bias.direction === "neutral" ? undefined
-      : `radial-gradient(120% 70% at 85% -10%, ${bias.direction === "long" ? "rgba(31,184,128," : "rgba(239,68,68,"}${bias.strength === "strong" ? 0.16 : 0.08}), transparent 65%)`;
-
   return (
-    <div className="ds-panel ds-panel-signature p-4 relative overflow-hidden">
-      {glow && <div className="absolute inset-0 pointer-events-none" style={{ background: glow }} />}
+    <div className="ds-panel p-4 relative overflow-hidden">
       <div className="relative">
       <div className="flex items-start justify-between">
         <div>
-          <div className="ds-label mb-1">Order-flow bias</div>
-          <div className={cn("text-[26px] font-semibold tracking-[-0.02em] leading-none", dirColor)}>
+          <div className="ds-label mb-1 flex items-center gap-1.5">
+            Order-flow lean
+            <span className="rounded-full bg-white/[0.06] px-1.5 py-[1px] text-[10px] text-txt-muted normal-case tracking-normal" title="Tested on recorded data: no edge predicting direction at 15m, 1h or 4h. Shown as context only.">no proven edge</span>
+          </div>
+          <div className={cn("text-[18px] font-semibold tracking-[-0.01em] leading-none", dirColor)}>
             {dirText}
             {bias.direction !== "neutral" && (
               <span className="ml-2 text-[13px] font-medium text-txt-secondary capitalize">{bias.strength}</span>
@@ -497,7 +482,7 @@ function BiasCard({ bias, of }: { bias: BiasResult | null; of: OrderflowState })
           </div>
         </div>
         <div className="text-right">
-          <div className={cn("ds-num text-[26px] font-semibold leading-none", dirColor)}>
+          <div className={cn("ds-num text-[18px] font-semibold leading-none", dirColor)}>
             {bias.score > 0 ? "+" : ""}
             {bias.score}
           </div>
@@ -523,12 +508,11 @@ function BiasCard({ bias, of }: { bias: BiasResult | null; of: OrderflowState })
         <span>Buyers</span>
       </div>
 
-      <p className="mt-4 text-[13.5px] text-txt-primary leading-[1.5]">{bias.summary}</p>
+      <p className="mt-4 text-[12.5px] text-txt-secondary leading-[1.5]">{bias.summary} Context, not a call: direction from flow tested at coin-flip.</p>
 
       {of.mtf && <MtfRow mtf={of.mtf} />}
 
-      <div className="mt-4 grid grid-cols-3 gap-2">
-        <MiniStat label="Confidence" value={`${bias.confidence}%`} />
+      <div className="mt-4 grid grid-cols-2 gap-2">
         <MiniStat label="Agree / against" value={`${bias.agreeing} / ${bias.opposing}`} />
         <MiniStat label="Data coverage" value={`${Math.round(bias.coverage * 100)}%`} />
       </div>

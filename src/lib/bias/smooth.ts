@@ -20,11 +20,16 @@ export interface SmoothConfig {
   holdMs: number;
 }
 
+// Bias v2 (Nov 2026): slowed down. The old settings flipped a directional
+// call every 8–10 min (median) with no measured edge. Longer half-life,
+// wider band, longer hold — and an opposite flip must now be decisive.
 export const SMOOTH: Record<BiasResult["horizon"], SmoothConfig> = {
-  "5m": { halfLifeMs: 30_000, enter: 25, exit: 12, holdMs: 60_000 },
-  "15m": { halfLifeMs: 60_000, enter: 25, exit: 12, holdMs: 120_000 },
-  "1h": { halfLifeMs: 180_000, enter: 25, exit: 12, holdMs: 300_000 },
+  "5m": { halfLifeMs: 60_000, enter: 30, exit: 15, holdMs: 3 * 60_000 },
+  "15m": { halfLifeMs: 180_000, enter: 30, exit: 15, holdMs: 10 * 60_000 },
+  "1h": { halfLifeMs: 360_000, enter: 30, exit: 15, holdMs: 20 * 60_000 },
 };
+/** An early flip straight to the opposite side needs |score| ≥ enter × this. */
+const DECISIVE = 1.6;
 
 type Dir = BiasResult["direction"];
 
@@ -67,8 +72,9 @@ export class BiasSmoother {
     }
     if (target !== this.dir) {
       const flipToOpposite = (this.dir === "long" && target === "short") || (this.dir === "short" && target === "long");
-      // A full flip to the other side overrides the hold; drifting to neutral waits.
-      if (flipToOpposite || now - this.since >= holdMs || this.since === 0) {
+      // Only a decisive flip to the other side overrides the hold.
+      const decisive = flipToOpposite && Math.abs(s) >= enter * DECISIVE;
+      if (decisive || now - this.since >= holdMs || this.since === 0) {
         this.dir = target;
         this.since = now;
       }

@@ -7,6 +7,9 @@
 //   • flow_bars — 1-minute aggressive buy/sell volume (history for re-tuning)
 // Each flow_bias row also carries every signal's own score (`sig`) and the
 // book mid, so we can measure which inputs actually predict price.
+// Range regime (bias v2): one row per closed bar under horizon "rg1h"/"rg4h",
+// t = bar close; raw = P(break)×100, score = vol percentile×100,
+// direction = state, px = close, sig = {hi, lo, er: expected range %}.
 //
 // Continuity: RUN_MODE decides how a run starts.
 //   • "handoff"  — dispatched by the previous run ~25 min before it ends. The
@@ -31,6 +34,7 @@ import {
   type Trade,
 } from "../src/lib/bias/engine";
 import { BiasSmoother, SMOOTH } from "../src/lib/bias/smooth";
+import { barsNeeded, computeRegime, REGIMES } from "../src/lib/bias/regime";
 import { supabaseRpc } from "../src/lib/track/supabase";
 import type { CoinCohorts } from "../src/lib/cohorts/cohorts";
 
@@ -73,6 +77,7 @@ interface CoinState {
   sigFigs: number | null;
   smoothers: Record<string, BiasSmoother>;
   latest: Record<string, { raw: number; score: number; direction: string; coverage: number; warming: boolean; sig: Record<string, number | null> }>;
+  regimeAsOf: Record<string, number>;
   mid: number | null;
   bars: Map<number, Bar>;
 }
@@ -81,7 +86,7 @@ const S = new Map<string, CoinState>(
   COINS.map((c) => [c, {
     coin: c, trades: [], book: [], lastImb: null, ctx: [], candles: [], vol24h: 0, cohort: null, cohortLoaded: false, sigFigs: null,
     smoothers: Object.fromEntries(HORIZONS.map((h) => [h.id, new BiasSmoother(SMOOTH[h.id])])),
-    latest: {}, bars: new Map(), mid: null,
+    latest: {}, regimeAsOf: {}, bars: new Map(), mid: null,
   }])
 );
 
@@ -203,6 +208,50 @@ async function pollCandles() {
   }
 }
 
+// ── Range regime (every 5 min, just after the bar close) ─────────
+// Full history once per coin (spread out), then only the newest bars, so
+// 20 coins stay well inside HL's request-weight limit.
+const pendingRegime: object[] = [];
+type RC = { t: number; o: number; h: number; l: number; c: number };
+const regimeCandles = new Map<string, RC[]>();
+let regimeBusy = false;
+async function pollRegime() {
+  if (regimeBusy) return;
+  regimeBusy = true;
+  try {
+    for (const st of S.values()) {
+      for (const cfg of REGIMES) {
+        const key = `${st.coin}:${cfg.id}`;
+        const have = regimeCandles.get(key) ?? [];
+        const need = barsNeeded(cfg) + 20;
+        const now = Date.now();
+        const full = have.length < need - 25;
+        try {
+          const startTime = full ? now - need * cfg.barMs : have[have.length - 1].t;
+          const raw = await info<{ t: number; o: string; h: string; l: string; c: string }[]>({
+            type: "candleSnapshot", req: { coin: st.coin, interval: cfg.interval, startTime, endTime: now },
+          });
+          const fresh = raw.map((k) => ({ t: k.t, o: +k.o, h: +k.h, l: +k.l, c: +k.c }));
+          const merged = full ? fresh : [...have.filter((k) => k.t < (fresh[0]?.t ?? Infinity)), ...fresh];
+          const kept = merged.slice(-need);
+          regimeCandles.set(key, kept);
+          const rd = computeRegime(kept, cfg, Date.now());
+          if (rd && !rd.thin && st.regimeAsOf[cfg.id] !== rd.asOf) {
+            st.regimeAsOf[cfg.id] = rd.asOf;
+            pendingRegime.push({
+              t: new Date(rd.asOf).toISOString(), coin: st.coin, horizon: `rg${cfg.id}`,
+              raw: Math.round(rd.pBreak * 100), score: Math.round(rd.pct * 100), direction: rd.state,
+              coverage: 1, px: rd.lastClose, mid: null,
+              sig: { hi: rd.rangeHi, lo: rd.rangeLo, er: Math.round(rd.expRangePct * 1000) / 1000 },
+            });
+          }
+        } catch (e) { log("regime failed", key, String(e).slice(0, 80)); }
+        await new Promise((r) => setTimeout(r, full ? 4_000 : 250));
+      }
+    }
+  } finally { regimeBusy = false; }
+}
+
 async function pollCohorts() {
   for (const st of S.values()) {
     try {
@@ -249,6 +298,8 @@ const STARTED_AT = Date.now();
 async function flush(minuteStart: number) {
   const iso = new Date(minuteStart).toISOString();
   const holdBias = Date.now() - STARTED_AT < HOLD_BIAS_MS;
+  // Regime rows dedupe on (coin, horizon, t), so overlapping runs are harmless.
+  if (pendingRegime.length) pendingBias.push(...pendingRegime.splice(0));
   for (const st of S.values()) {
     const px = st.trades[st.trades.length - 1]?.px;
     if (px && !holdBias) {
@@ -328,6 +379,7 @@ async function main() {
   await pollCtx();
   await pollCandles();
   await pollCohorts();
+  void pollRegime();
   connect();
   const timers = [
     setInterval(pollCtx, 15_000),
@@ -340,6 +392,11 @@ async function main() {
       log(`written bias=${written.bias} bars=${written.bars} | ${parts.join(" ")}`);
     }, 10 * 60_000),
   ];
+  const scheduleRegime = () => {
+    const wait = 300_000 - (Date.now() % 300_000) + 8_000;
+    timers.push(setTimeout(() => { void pollRegime(); scheduleRegime(); }, wait) as unknown as ReturnType<typeof setInterval>);
+  };
+  scheduleRegime();
   let handedOff = false;
   let lastMinute = Math.floor(Date.now() / 60_000) * 60_000;
   const minuteTimer = setInterval(async () => {
