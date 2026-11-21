@@ -96,7 +96,7 @@ export function RegimeCard({ regime, livePx }: { regime: RegimeState; livePx: nu
 
         <div className="mt-4 grid grid-cols-2 gap-2">
           <Mini label="Typical next-4h range" value={`≈ ${r.expRangePct.toFixed(r.expRangePct < 1 ? 2 : 1)}%`} />
-          <Mini label="Recent vol" value={`${volWord(r.pct)} · ${Math.round(r.pct * 100)}th pct`} />
+          <Mini label="Recent vol" value={`${volWord(r.pct)} · ${ordinal(Math.round(r.pct * 100))} pct`} />
         </div>
 
         {regime.h1 && <OneHourRow r={regime.h1} px={livePx} />}
@@ -172,4 +172,11 @@ function Mini({ label, value }: { label: string; value: string }) {
       <div className="ds-num text-[13px] text-txt-primary mt-0.5">{value}</div>
     </div>
   );
+}
+
+/** 1 → "1st", 2 → "2nd", 11 → "11th", 23 → "23rd". */
+function ordinal(n: number): string {
+  const v = n % 100;
+  if (v >= 11 && v <= 13) return `${n}th`;
+  return `${n}${({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[n % 10] ?? "th"}`;
 }
