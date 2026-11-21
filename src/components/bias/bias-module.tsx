@@ -110,7 +110,7 @@ export function BiasModule() {
         {panelOpen && (
           <aside className="terminal-side w-[320px] xl:w-[340px] shrink-0 overflow-y-auto rounded-xl">
             <div className="flex flex-col gap-2">
-              <RegimeCard regime={regime} />
+              <RegimeCard regime={regime} livePx={of.lastPx ?? null} />
               <BiasCard bias={of.bias} of={of} />
               <EvidenceList bias={of.bias} />
             </div>

@@ -20,6 +20,15 @@ const TONE: Record<RState, { text: string; dot: string; glow: string | null; chi
 
 const pctTxt = (p: number) => `${Math.round(p * 100)}%`;
 
+/** Has live price already traded through the range this read is about? */
+function brokeLine(r: RegimeRead, px: number | null, label: string): string | null {
+  if (px == null) return null;
+  const pad = 0.1 * (r.rangeHi - r.rangeLo);
+  if (px > r.rangeHi + pad) return `Price is already above the ${label} high: this range has broken up.`;
+  if (px < r.rangeLo - pad) return `Price is already below the ${label} low: this range has broken down.`;
+  return null;
+}
+
 function volWord(pct: number) {
   if (pct < 0.1) return "very quiet";
   if (pct < 0.3) return "quiet";
@@ -51,7 +60,7 @@ export function RegimeChip({ regime }: { regime: RegimeState }) {
   );
 }
 
-export function RegimeCard({ regime }: { regime: RegimeState }) {
+export function RegimeCard({ regime, livePx }: { regime: RegimeState; livePx: number | null }) {
   const now = useNow();
   const r = regime.h4;
   if (!r) {
@@ -93,14 +102,15 @@ export function RegimeCard({ regime }: { regime: RegimeState }) {
           </div>
         </div>
 
-        <RangeBar r={r} />
+        <RangeBar r={r} px={livePx} />
+        {brokeLine(r, livePx, "4h") && <p className="mt-2 text-[12px] text-warning">{brokeLine(r, livePx, "4h")}</p>}
 
         <div className="mt-4 grid grid-cols-2 gap-2">
           <Mini label="Typical next-4h range" value={`≈ ${r.expRangePct.toFixed(r.expRangePct < 1 ? 2 : 1)}%`} />
           <Mini label="Recent vol" value={`${volWord(r.pct)} · ${Math.round(r.pct * 100)}th pct`} />
         </div>
 
-        {regime.h1 && <OneHourRow r={regime.h1} />}
+        {regime.h1 && <OneHourRow r={regime.h1} px={livePx} />}
 
         <p className="mt-3 text-[11.5px] text-txt-muted leading-[1.5]">
           Says whether price trades past the last 4h high or low, not which way.
@@ -113,8 +123,9 @@ export function RegimeCard({ regime }: { regime: RegimeState }) {
   );
 }
 
-function RangeBar({ r }: { r: RegimeRead }) {
-  const pos = Math.max(0, Math.min(1, r.pos));
+function RangeBar({ r, px }: { r: RegimeRead; px: number | null }) {
+  const p = px ?? r.lastClose;
+  const pos = r.rangeHi > r.rangeLo ? Math.max(0, Math.min(1, (p - r.rangeLo) / (r.rangeHi - r.rangeLo))) : 0.5;
   return (
     <div className="mt-5">
       <div className="flex justify-between ds-micro mb-1.5">
@@ -127,7 +138,7 @@ function RangeBar({ r }: { r: RegimeRead }) {
         <div
           className="absolute -top-[3px] w-[3px] h-[14px] rounded-full bg-txt-primary transition-[left] duration-700"
           style={{ left: `calc(${pos * 100}% - 1.5px)` }}
-          title={`Last close ${fmtPrice(r.lastClose)}`}
+          title={`Price ${fmtPrice(p)}`}
         />
       </div>
       <div className="flex justify-between mt-1.5 ds-num text-[12px] text-txt-primary">
@@ -139,10 +150,12 @@ function RangeBar({ r }: { r: RegimeRead }) {
   );
 }
 
-function OneHourRow({ r }: { r: RegimeRead }) {
+function OneHourRow({ r, px }: { r: RegimeRead; px: number | null }) {
   const t = TONE[r.state];
+  const broke = brokeLine(r, px, "1h");
   return (
-    <div className="mt-2 rounded-[8px] border border-border bg-void px-2.5 py-2 flex items-center justify-between gap-2">
+    <div className="mt-2 rounded-[8px] border border-border bg-void px-2.5 py-2">
+    <div className="flex items-center justify-between gap-2">
       <div className="min-w-0">
         <div className="ds-label text-[11px]">Next 1h</div>
         <div className={cn("text-[12.5px] font-medium", t.text)}>{STATE_COPY[r.state].title}</div>
@@ -151,6 +164,8 @@ function OneHourRow({ r }: { r: RegimeRead }) {
         <div><span className={t.text}>{pctTxt(r.pBreak)}</span> breaks · usual {pctTxt(r.base)}</div>
         <div>{fmtPrice(r.rangeLo)} – {fmtPrice(r.rangeHi)}</div>
       </div>
+    </div>
+    {broke && <div className="mt-1 text-[11.5px] text-warning">{broke}</div>}
     </div>
   );
 }
