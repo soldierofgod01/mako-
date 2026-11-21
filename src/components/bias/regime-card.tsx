@@ -1,5 +1,4 @@
 "use client";
-import { useEffect, useState } from "react";
 import { STATE_COPY, type RegimeRead, type RegimeState as RState } from "@/lib/bias/regime";
 import type { RegimeState } from "@/lib/bias/use-regime";
 import { fmtPrice } from "@/lib/bias/format";
@@ -7,15 +6,16 @@ import { cn } from "@/lib/utils";
 
 // ════════════════════════════════════════════════════════════════
 // Range regime card — the Terminal's headline (bias v2).
-// Not directional on purpose: colours are amber (breakout) and blue (hold),
+// Not directional on purpose: colours are white (breakout) and ice blue (hold),
 // never green/red, so it can't be read as long/short.
 // ════════════════════════════════════════════════════════════════
 
+// Breakout = bright white; hold = soft ice blue (brand silver/ice family).
 const TONE: Record<RState, { text: string; dot: string; glow: string | null; chip: string }> = {
-  breakout: { text: "text-warning", dot: "bg-warning", glow: "rgba(245,158,11,", chip: "text-warning bg-warning/10" },
+  breakout: { text: "text-txt-primary", dot: "bg-txt-primary", glow: "rgba(255,255,255,", chip: "text-txt-primary bg-white/[0.09]" },
   normal: { text: "text-txt-secondary", dot: "bg-txt-muted", glow: null, chip: "text-txt-secondary bg-white/[0.05]" },
-  "lean-hold": { text: "text-tier-diamond", dot: "bg-tier-diamond", glow: "rgba(96,165,250,", chip: "text-tier-diamond bg-tier-diamond/10" },
-  hold: { text: "text-tier-diamond", dot: "bg-tier-diamond", glow: "rgba(96,165,250,", chip: "text-tier-diamond bg-tier-diamond/10" },
+  "lean-hold": { text: "text-[#A9C7EC]", dot: "bg-[#A9C7EC]", glow: "rgba(169,199,236,", chip: "text-[#A9C7EC] bg-[#A9C7EC]/10" },
+  hold: { text: "text-[#A9C7EC]", dot: "bg-[#A9C7EC]", glow: "rgba(169,199,236,", chip: "text-[#A9C7EC] bg-[#A9C7EC]/10" },
 };
 
 const pctTxt = (p: number) => `${Math.round(p * 100)}%`;
@@ -37,15 +37,6 @@ function volWord(pct: number) {
   return "very hot";
 }
 
-function useNow(ms = 15_000) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), ms);
-    return () => clearInterval(id);
-  }, [ms]);
-  return now;
-}
-
 /** Compact chip for the market bar. */
 export function RegimeChip({ regime }: { regime: RegimeState }) {
   const r = regime.h4;
@@ -61,7 +52,6 @@ export function RegimeChip({ regime }: { regime: RegimeState }) {
 }
 
 export function RegimeCard({ regime, livePx }: { regime: RegimeState; livePx: number | null }) {
-  const now = useNow();
   const r = regime.h4;
   if (!r) {
     if (regime.error) {
@@ -83,7 +73,6 @@ export function RegimeCard({ regime, livePx }: { regime: RegimeState; livePx: nu
   const t = TONE[r.state];
   const copy = STATE_COPY[r.state];
   const glow = t.glow ? `radial-gradient(120% 70% at 85% -10%, ${t.glow}0.12), transparent 65%)` : undefined;
-  const nextMin = Math.max(0, Math.ceil((r.nextAt - now) / 60_000));
 
   return (
     <div className="ds-panel ds-panel-signature p-4 relative overflow-hidden">
@@ -103,7 +92,7 @@ export function RegimeCard({ regime, livePx }: { regime: RegimeState; livePx: nu
         </div>
 
         <RangeBar r={r} px={livePx} />
-        {brokeLine(r, livePx, "4h") && <p className="mt-2 text-[12px] text-warning">{brokeLine(r, livePx, "4h")}</p>}
+        {brokeLine(r, livePx, "4h") && <p className="mt-2 text-[12px] text-txt-primary">{brokeLine(r, livePx, "4h")}</p>}
 
         <div className="mt-4 grid grid-cols-2 gap-2">
           <Mini label="Typical next-4h range" value={`≈ ${r.expRangePct.toFixed(r.expRangePct < 1 ? 2 : 1)}%`} />
@@ -112,12 +101,6 @@ export function RegimeCard({ regime, livePx }: { regime: RegimeState; livePx: nu
 
         {regime.h1 && <OneHourRow r={regime.h1} px={livePx} />}
 
-        <p className="mt-3 text-[11.5px] text-txt-muted leading-[1.5]">
-          Says whether price trades past the last 4h high or low, not which way.
-          Tested on 20 coins without lookahead: &ldquo;breakout likely&rdquo; calls broke ~83%, &ldquo;range likely holds&rdquo; ~42%.
-          Updates only at bar close · next in {nextMin} min.
-          {r.thin && " Limited history on this coin, so the read is less reliable."}
-        </p>
       </div>
     </div>
   );
@@ -165,7 +148,7 @@ function OneHourRow({ r, px }: { r: RegimeRead; px: number | null }) {
         <div>{fmtPrice(r.rangeLo)} – {fmtPrice(r.rangeHi)}</div>
       </div>
     </div>
-    {broke && <div className="mt-1 text-[11.5px] text-warning">{broke}</div>}
+    {broke && <div className="mt-1 text-[11.5px] text-txt-primary">{broke}</div>}
     </div>
   );
 }
