@@ -143,3 +143,17 @@ export function absorptionMarks(
   }
   return out;
 }
+
+/** Heikin Ashi candles (standard formula; first bar seeds from the real open/close). */
+export function heikinAshi(candles: Candle[]): Candle[] {
+  const out: Candle[] = [];
+  let po = 0, pc = 0;
+  for (let i = 0; i < candles.length; i++) {
+    const k = candles[i];
+    const c = (k.o + k.h + k.l + k.c) / 4;
+    const o = i === 0 ? (k.o + k.c) / 2 : (po + pc) / 2;
+    out.push({ t: k.t, o, h: Math.max(k.h, o, c), l: Math.min(k.l, o, c), c, v: k.v });
+    po = o; pc = c;
+  }
+  return out;
+}

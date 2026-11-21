@@ -12,6 +12,7 @@ import type {
   IPrimitivePaneView,
   ISeriesApi,
   ISeriesPrimitive,
+  ISeriesPrimitiveAxisView,
   PrimitivePaneViewZOrder,
   SeriesAttachedParameter,
   SeriesType,
@@ -445,4 +446,62 @@ export class AbsorptionBoxLayer extends Layer {
       }
     });
   }
+}
+
+// ─── Candle close countdown ──────────────────────────────────────
+// A second price-axis label sitting directly under the last-price label,
+// TradingView-style: time left until the current bar closes.
+export class CountdownLayer implements ISeriesPrimitive<Time> {
+  private chart: IChartApi | null = null;
+  private series: ISeriesApi<SeriesType> | null = null;
+  private request: (() => void) | null = null;
+  private timer: ReturnType<typeof setInterval> | null = null;
+  /** Price the last-value label sits at (the current bar's close). */
+  price: number | null = null;
+  /** Epoch ms when the current bar closes. */
+  endsAt: number | null = null;
+  back = "#26262B";
+  text = "#EDEDEF";
+  enabled = true;
+
+  private view: ISeriesPrimitiveAxisView = {
+    coordinate: () => {
+      const y = this.price != null ? this.series?.priceToCoordinate(this.price) : null;
+      if (y == null) return -1000;
+      // Last-value label height = fontSize + 2 × (2.5/12 × fontSize) in lightweight-charts.
+      const fs = this.chart?.options().layout.fontSize ?? 11;
+      return y + fs * (1 + 5 / 12);
+    },
+    text: () => fmtLeft(this.endsAt != null ? this.endsAt - Date.now() : 0),
+    textColor: () => this.text,
+    backColor: () => this.back,
+    visible: () => this.enabled && this.price != null && this.endsAt != null && this.endsAt > Date.now(),
+    tickVisible: () => false,
+  };
+
+  attached(p: SeriesAttachedParameter<Time>) {
+    this.chart = p.chart;
+    this.series = p.series;
+    this.request = p.requestUpdate;
+    this.timer = setInterval(() => this.request?.(), 1000);
+  }
+  detached() {
+    if (this.timer) clearInterval(this.timer);
+    this.timer = null;
+    this.chart = null;
+    this.series = null;
+    this.request = null;
+  }
+  refresh() { this.request?.(); }
+  priceAxisViews() { return [this.view]; }
+  paneViews() { return []; }
+}
+
+function fmtLeft(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  const p = (n: number) => String(n).padStart(2, "0");
+  if (d > 0) return `${d}d ${p(h)}h`;
+  if (h > 0) return `${p(h)}:${p(m)}:${p(sec)}`;
+  return `${p(m)}:${p(sec)}`;
 }

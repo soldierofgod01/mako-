@@ -2,10 +2,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { BarChart3, Check, ChevronDown, Search } from "lucide-react";
-import { CaretRight, Info, SidebarSimple } from "@phosphor-icons/react";
+import { ArrowCounterClockwise, CaretRight, Info, SidebarSimple } from "@phosphor-icons/react";
 import { useAppStore } from "@/stores/app-store";
-import { useOrderflow, CHART_INTERVALS, horizonForInterval, type ChartInterval, type OrderflowState } from "@/lib/hooks/use-orderflow";
-import { DEFAULT_INDICATORS, INDICATORS, OrderflowChart, PARKED_INDICATORS, type Indicators } from "./orderflow-chart";
+import { useOrderflow, CHART_INTERVALS, INTERVAL_LABEL, horizonForInterval, type ChartInterval, type OrderflowState } from "@/lib/hooks/use-orderflow";
+import { CHART_TYPES, DEFAULT_INDICATORS, INDICATORS, OrderflowChart, PARKED_INDICATORS, type ChartType, type Indicators, type ScaleMode, type ViewCmd } from "./orderflow-chart";
 import { OrderBookPanel } from "./order-book";
 import { BottomPanel } from "./bottom-panel";
 import { useVol } from "@/lib/vol/use-vol";
@@ -58,8 +58,15 @@ export function BiasModule() {
   const [interval, setIntervalState] = useState<ChartInterval>("15m");
   const [indicators, setIndicatorsState] = useState<Indicators>(DEFAULT_INDICATORS);
   const [panelOpen, setPanelOpen] = useState(true);
+  const [chartType, setChartTypeState] = useState<ChartType>("candles");
+  const [scaleMode, setScaleModeState] = useState<ScaleMode>("normal");
+  const [viewCmd, setViewCmd] = useState<ViewCmd>({ n: 0, kind: "fit" });
   useEffect(() => {
     try {
+      const ct = localStorage.getItem("mako:chart:type") as ChartType | null;
+      if (ct && CHART_TYPES.some((t) => t.id === ct)) setChartTypeState(ct);
+      const sm = localStorage.getItem("mako:chart:scale") as ScaleMode | null;
+      if (sm === "log" || sm === "pct") setScaleModeState(sm);
       const v = localStorage.getItem("mako:chart:interval") as ChartInterval | null;
       if (v && v in CHART_INTERVALS) setIntervalState(v);
       const ind = localStorage.getItem("mako:chart:indicators:v2");
@@ -75,6 +82,15 @@ export function BiasModule() {
     setIntervalState(i);
     try { localStorage.setItem("mako:chart:interval", i); } catch { /* ignore */ }
   };
+  const setChartType = (t: ChartType) => {
+    setChartTypeState(t);
+    try { localStorage.setItem("mako:chart:type", t); } catch { /* ignore */ }
+  };
+  const setScaleMode = (m: ScaleMode) => {
+    setScaleModeState(m);
+    try { localStorage.setItem("mako:chart:scale", m); } catch { /* ignore */ }
+  };
+  const fireView = (kind: ViewCmd["kind"]) => setViewCmd((v) => ({ n: v.n + 1, kind }));
   const setIndicators = (f: (i: Indicators) => Indicators) =>
     setIndicatorsState((prev) => {
       const next = f(prev);
@@ -99,9 +115,15 @@ export function BiasModule() {
         <div className="flex-1 min-w-0 flex flex-col gap-2">
           <div className="flex-1 min-h-0 flex gap-2">
             <section className="flex-1 min-w-0 ds-card-panel overflow-hidden flex flex-col">
-              <ChartToolbar interval={interval} onInterval={setInterval_} indicators={indicators} setIndicators={setIndicators} />
+              <ChartToolbar
+                interval={interval} onInterval={setInterval_} indicators={indicators} setIndicators={setIndicators}
+                chartType={chartType} onChartType={setChartType} scaleMode={scaleMode} onScaleMode={setScaleMode} onView={fireView}
+              />
               <div className="flex-1 min-h-0 relative">
-                <OrderflowChart key={biasCoin} of={of} coin={biasCoin} interval={interval} indicators={indicators} setIndicators={setIndicators} liqLevels={liqLevels} vol={vol} />
+                <OrderflowChart
+                  key={biasCoin} of={of} coin={biasCoin} interval={interval} indicators={indicators} setIndicators={setIndicators}
+                  liqLevels={liqLevels} vol={vol} chartType={chartType} scaleMode={scaleMode} viewCmd={viewCmd} onNeedOlder={of.loadOlder}
+                />
               </div>
             </section>
             <div className="hidden lg:flex w-[248px] xl:w-[272px] shrink-0 flex-col min-h-0">
@@ -191,14 +213,26 @@ function Stat({ label, value, tone, wide }: { label: string; value: string; tone
   );
 }
 
-function ChartToolbar({ interval, onInterval, indicators, setIndicators }: {
+/** Timeframes shown as pills; the rest live in the ▾ menu (TradingView-style favourites). */
+const PINNED_INTERVALS: ChartInterval[] = ["1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w"];
+const INTERVAL_GROUPS: { label: string; items: ChartInterval[] }[] = [
+  { label: "Minutes", items: ["1m", "3m", "5m", "15m", "30m"] },
+  { label: "Hours", items: ["1h", "2h", "4h", "8h", "12h"] },
+  { label: "Days", items: ["1d", "3d", "1w", "1M"] },
+];
+
+function ChartToolbar({ interval, onInterval, indicators, setIndicators, chartType, onChartType, scaleMode, onScaleMode, onView }: {
   interval: ChartInterval; onInterval: (i: ChartInterval) => void;
   indicators: Indicators; setIndicators: (f: (i: Indicators) => Indicators) => void;
+  chartType: ChartType; onChartType: (t: ChartType) => void;
+  scaleMode: ScaleMode; onScaleMode: (m: ScaleMode) => void;
+  onView: (k: ViewCmd["kind"]) => void;
 }) {
+  const shown = PINNED_INTERVALS.includes(interval) ? PINNED_INTERVALS : [...PINNED_INTERVALS, interval];
   return (
     <div className="h-10 shrink-0 flex items-center gap-2 px-2 border-b border-border">
       <div className="flex items-center gap-0.5">
-        {(Object.keys(CHART_INTERVALS) as ChartInterval[]).map((i) => (
+        {shown.map((i) => (
           <button
             key={i}
             onClick={() => onInterval(i)}
@@ -207,14 +241,137 @@ function ChartToolbar({ interval, onInterval, indicators, setIndicators }: {
               interval === i ? "bg-elevated-2 text-txt-primary" : "text-txt-muted hover:text-txt-primary"
             )}
           >
-            {i}
+            {INTERVAL_LABEL[i]}
           </button>
         ))}
+        <Dropdown
+          title="All timeframes"
+          trigger={(open) => (
+            <span className={cn("h-7 w-6 rounded-full flex items-center justify-center transition-colors", open ? "bg-elevated text-txt-primary" : "text-txt-muted hover:text-txt-primary")}>
+              <ChevronDown className="w-3.5 h-3.5" />
+            </span>
+          )}
+        >
+          {(close) => (
+            <div className="w-[176px] py-1.5">
+              {INTERVAL_GROUPS.map((g) => (
+                <div key={g.label} className="px-1.5 pb-1">
+                  <div className="px-1.5 pt-1 pb-1 text-[11px] uppercase tracking-wide text-txt-dim">{g.label}</div>
+                  <div className="grid grid-cols-3 gap-1">
+                    {g.items.map((i) => (
+                      <button
+                        key={i}
+                        onClick={() => { onInterval(i); close(); }}
+                        className={cn("h-7 rounded-md text-[12px] ds-num font-medium transition-colors", interval === i ? "bg-elevated-2 text-txt-primary" : "text-txt-secondary hover:bg-white/[0.05] hover:text-txt-primary")}
+                      >
+                        {INTERVAL_LABEL[i]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Dropdown>
       </div>
       <span className="w-px h-5 bg-border" />
+      <Dropdown
+        title="Chart type"
+        trigger={(open) => (
+          <span className={cn("h-7 w-8 rounded-md flex items-center justify-center transition-colors", open ? "bg-elevated text-txt-primary" : "text-txt-secondary hover:text-txt-primary hover:bg-panel")}>
+            <ChartTypeIcon t={chartType} />
+          </span>
+        )}
+      >
+        {(close) => (
+          <div className="w-[190px] py-1.5">
+            {CHART_TYPES.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => { onChartType(t.id); close(); }}
+                className={cn("w-full h-8 px-3 flex items-center gap-2.5 text-left text-[12.5px] transition-colors hover:bg-white/[0.04]", chartType === t.id ? "text-txt-primary" : "text-txt-secondary")}
+              >
+                <ChartTypeIcon t={t.id} />
+                <span className="flex-1">{t.label}</span>
+                {chartType === t.id && <Check className="w-3.5 h-3.5 text-txt-primary" />}
+              </button>
+            ))}
+          </div>
+        )}
+      </Dropdown>
+      <span className="w-px h-5 bg-border" />
       <IndicatorsMenu indicators={indicators} setIndicators={setIndicators} />
+
+      {/* Price scale — right side, like TradingView's bottom-right controls */}
+      <div className="ml-auto flex items-center gap-0.5">
+        <ScaleBtn on={scaleMode === "pct"} onClick={() => onScaleMode(scaleMode === "pct" ? "normal" : "pct")} title="Percentage scale">%</ScaleBtn>
+        <ScaleBtn on={scaleMode === "log"} onClick={() => onScaleMode(scaleMode === "log" ? "normal" : "log")} title="Logarithmic scale">log</ScaleBtn>
+        <ScaleBtn on={false} onClick={() => onView("fit")} title="Auto-fit the price axis">auto</ScaleBtn>
+        <button
+          onClick={() => onView("reset")}
+          title="Reset chart view"
+          className="h-7 w-7 rounded-md flex items-center justify-center text-txt-muted hover:text-txt-primary hover:bg-panel transition-colors"
+        >
+          <ArrowCounterClockwise size={15} />
+        </button>
+      </div>
     </div>
   );
+}
+
+function ScaleBtn({ on, onClick, title, children }: { on: boolean; onClick: () => void; title: string; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      className={cn("h-7 px-2 rounded-md text-[12px] font-medium ds-num transition-colors", on ? "bg-elevated-2 text-txt-primary" : "text-txt-muted hover:text-txt-primary hover:bg-panel")}
+    >
+      {children}
+    </button>
+  );
+}
+
+/** Small popover anchored under its trigger; closes on outside click / Escape. */
+function Dropdown({ trigger, title, children }: { trigger: (open: boolean) => React.ReactNode; title: string; children: (close: () => void) => React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", esc); };
+  }, [open]);
+  return (
+    <div ref={ref} className="relative">
+      <button onClick={() => setOpen((v) => !v)} title={title} className="flex">{trigger(open)}</button>
+      {open && (
+        <div className="absolute left-0 top-9 z-50 rounded-lg border border-border-strong bg-elevated shadow-2xl">
+          {children(() => setOpen(false))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 16px glyphs for each chart type (TradingView-like). */
+function ChartTypeIcon({ t }: { t: ChartType }) {
+  const c = { width: 16, height: 16, viewBox: "0 0 16 16", fill: "none", stroke: "currentColor", strokeWidth: 1.3, strokeLinecap: "round" as const };
+  switch (t) {
+    case "candles":
+      return <svg {...c}><path d="M5 2v2.5M5 11v3M11 1.5v3.5M11 10v4" /><rect x="3.3" y="4.5" width="3.4" height="6.5" rx="0.6" fill="currentColor" /><rect x="9.3" y="5" width="3.4" height="5" rx="0.6" fill="currentColor" /></svg>;
+    case "hollow":
+      return <svg {...c}><path d="M5 2v2.5M5 11v3M11 1.5v3.5M11 10v4" /><rect x="3.3" y="4.5" width="3.4" height="6.5" rx="0.6" /><rect x="9.3" y="5" width="3.4" height="5" rx="0.6" fill="currentColor" /></svg>;
+    case "heikin":
+      return <svg {...c}><path d="M5 3v2M5 10v3M11 2v3M11 10.5v3" /><rect x="3.3" y="5" width="3.4" height="5" rx="1.4" fill="currentColor" /><rect x="9.3" y="5" width="3.4" height="5.5" rx="1.4" /></svg>;
+    case "bars":
+      return <svg {...c}><path d="M5 2.5v11M3 5h2M5 11h2M11 1.5v11M9 9.5h2M11 3.5h2" /></svg>;
+    case "line":
+      return <svg {...c}><path d="M1.5 12l4-4.5 3 2.5L14.5 3.5" /></svg>;
+    case "area":
+      return <svg {...c}><path d="M1.5 12l4-4.5 3 2.5L14.5 3.5" /><path d="M1.5 12l4-4.5 3 2.5L14.5 3.5V14H1.5z" fill="currentColor" fillOpacity="0.22" stroke="none" /></svg>;
+  }
 }
 
 // ─── Evidence (compact; click a row for the explanation) ────────

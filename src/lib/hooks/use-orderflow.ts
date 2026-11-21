@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   H5,
@@ -25,11 +25,31 @@ import { fromRecorder, RECORDER_MAX_AGE_MS, type RecorderRead } from "@/lib/bias
 const HEAT_KEEP_MS = 45 * 60_000;
 
 export type { CvdPoint };
-export const CHART_INTERVALS = { "1m": 60_000, "5m": 300_000, "15m": 900_000, "1h": 3_600_000, "4h": 14_400_000 } as const;
+/** Every candle interval Hyperliquid serves, in order. Keys are HL's own names
+ *  ("1M" = month). Month and week lengths are nominal — anything that needs a
+ *  bar's real end uses barEnd(). */
+export const CHART_INTERVALS = {
+  "1m": 60_000, "3m": 180_000, "5m": 300_000, "15m": 900_000, "30m": 1_800_000,
+  "1h": 3_600_000, "2h": 7_200_000, "4h": 14_400_000, "8h": 28_800_000, "12h": 43_200_000,
+  "1d": 86_400_000, "3d": 259_200_000, "1w": 604_800_000, "1M": 2_592_000_000,
+} as const;
 export type ChartInterval = keyof typeof CHART_INTERVALS;
-/** Which bias horizon matches a chart timeframe: 1m/5m → 5m, 15m → 15m, 1h/4h → 1h. */
+/** Display label: minutes/hours as-is, days/weeks/months upper-case like TradingView. */
+export const INTERVAL_LABEL: Record<ChartInterval, string> = {
+  "1m": "1m", "3m": "3m", "5m": "5m", "15m": "15m", "30m": "30m", "1h": "1h", "2h": "2h", "4h": "4h",
+  "8h": "8h", "12h": "12h", "1d": "1D", "3d": "3D", "1w": "1W", "1M": "1M",
+};
+/** End (exclusive, epoch ms) of the bar that starts at t. Months vary in length. */
+export function barEnd(t: number, iv: ChartInterval): number {
+  if (iv === "1M") {
+    const d = new Date(t);
+    return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1);
+  }
+  return t + CHART_INTERVALS[iv];
+}
+/** Which bias horizon matches a chart timeframe: ≤5m → 5m, 15m/30m → 15m, 1h and up → 1h. */
 export function horizonForInterval(iv: ChartInterval): "5m" | "15m" | "1h" {
-  return iv === "1m" || iv === "5m" ? "5m" : iv === "15m" ? "15m" : "1h";
+  return iv === "1m" || iv === "3m" || iv === "5m" ? "5m" : iv === "15m" || iv === "30m" ? "15m" : "1h";
 }
 
 export interface CohortsResponse {
@@ -159,7 +179,7 @@ const EMPTY: OrderflowState = {
   chart: null,
 };
 
-export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m"): OrderflowState & { live: LiveFeed } {
+export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m"): OrderflowState & { live: LiveFeed; loadOlder: () => void } {
   const [state, setState] = useState<OrderflowState>(EMPTY);
   const liveRef = useRef<LiveFeed | null>(null);
   if (!liveRef.current) liveRef.current = new LiveFeed();
@@ -630,9 +650,36 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
       while (hist.length && hist[hist.length - 1].t >= lastLive.t) hist.pop();
       hist.push(...live.filter((c) => c.t > (hist[hist.length - 1]?.t ?? 0)));
     }
+    // Keep older candles the user already scrolled back into (the refetch only covers the recent window).
+    if (hist.length && live.length && live[0].t < hist[0].t) hist.unshift(...live.filter((c) => c.t < hist[0].t));
     chartCandlesRef.current = hist;
     profileRef.current = d.profile;
   }, [candleQuery.data]);
+
+  // ── Older candles on demand (chart scrolled near its left edge) ──
+  // HL only serves the most recent 5000 candles per interval; an empty page means we've hit that floor.
+  const olderRef = useRef({ key: "", loading: false, done: false });
+  const loadOlder = useCallback(() => {
+    const c = coinRef.current, iv = intervalRef.current, key = `${c}|${iv}`;
+    const arr = chartCandlesRef.current;
+    if (!arr.length) return;
+    const st = olderRef.current;
+    if (st.key !== key) { st.key = key; st.loading = false; st.done = false; }
+    if (st.loading || st.done) return;
+    st.loading = true;
+    const first = arr[0].t;
+    hlCandles(c, iv, first - 1500 * CHART_INTERVALS[iv], first - 1)
+      .then((older) => {
+        if (coinRef.current !== c || intervalRef.current !== iv) return;
+        const cur = chartCandlesRef.current;
+        const firstNow = cur[0]?.t ?? Infinity;
+        const add = older.filter((k) => k.t < firstNow);
+        if (!add.length) st.done = true;
+        else chartCandlesRef.current = [...add, ...cur];
+      })
+      .catch(() => { /* try again on the next scroll */ })
+      .finally(() => { if (olderRef.current.key === key) olderRef.current.loading = false; });
+  }, []);
 
   // ── Stored delta history from the 24/7 flow recorder ──
   const flowQuery = useQuery({
@@ -804,25 +851,28 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
     return () => clearInterval(id);
   }, []);
 
-  return { ...state, live };
+  return { ...state, live, loadOlder };
 }
 
-/** Same window as /api/candles: chart history reaching back to the UTC day start, plus today's 1m candles. */
+/** One candleSnapshot page straight from Hyperliquid (max 5000 candles per call). */
+export async function hlCandles(coin: string, iv: string, startTime: number, endTime: number): Promise<Candle[]> {
+  const res = await fetch("https://api.hyperliquid.xyz/info", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ type: "candleSnapshot", req: { coin, interval: iv, startTime, endTime } }),
+  });
+  if (!res.ok) throw new Error(`HL ${res.status}`);
+  const raw = (await res.json()) as { t: number; o: string; h: string; l: string; c: string; v: string }[];
+  return (Array.isArray(raw) ? raw : []).map((k) => ({ t: k.t, o: +k.o, h: +k.h, l: +k.l, c: +k.c, v: +k.v }));
+}
+
+/** Initial chart window: the last 1000 bars (and at least back to the UTC day start), plus today's 1m candles. */
+export const INITIAL_BARS = 1000;
 async function browserCandles(coin: string, interval: ChartInterval) {
-  const snap = async (iv: string, startTime: number, endTime: number): Promise<Candle[]> => {
-    const res = await fetch("https://api.hyperliquid.xyz/info", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ type: "candleSnapshot", req: { coin, interval: iv, startTime, endTime } }),
-    });
-    if (!res.ok) throw new Error(`HL ${res.status}`);
-    const raw = (await res.json()) as { t: number; o: string; h: string; l: string; c: string; v: string }[];
-    return (Array.isArray(raw) ? raw : []).map((k) => ({ t: k.t, o: +k.o, h: +k.h, l: +k.l, c: +k.c, v: +k.v }));
-  };
   const now = Date.now();
   const dayStart = Math.floor(now / 86_400_000) * 86_400_000;
-  const start = Math.min(dayStart, now - 400 * CHART_INTERVALS[interval]);
-  const [candles, profile] = await Promise.all([snap(interval, start, now), snap("1m", dayStart, now)]);
+  const start = Math.min(dayStart, now - INITIAL_BARS * CHART_INTERVALS[interval]);
+  const [candles, profile] = await Promise.all([hlCandles(coin, interval, start, now), hlCandles(coin, "1m", dayStart, now)]);
   if (!candles.length) throw new Error("no candles");
   return { coin, interval, candles, profile };
 }

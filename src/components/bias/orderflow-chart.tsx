@@ -3,6 +3,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   createChart,
   createSeriesMarkers,
+  AreaSeries,
+  BarSeries,
   BaselineSeries,
   CandlestickSeries,
   LineType,
@@ -11,6 +13,9 @@ import {
   HistogramSeries,
   LineSeries,
   LineStyle,
+  PriceScaleMode,
+  TickMarkType,
+  type AutoscaleInfo,
   type IChartApi,
   type IPriceLine,
   type ISeriesApi,
@@ -21,14 +26,14 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import { Eye, EyeOff, X } from "lucide-react";
-import { absorptionMarks, volumeProfile, vwapSeries, type VolumeProfile } from "@/lib/bias/chart-math";
+import { absorptionMarks, heikinAshi, volumeProfile, vwapSeries, type VolumeProfile } from "@/lib/bias/chart-math";
 import { fmtUsd } from "@/lib/bias/engine";
 import { buildFootprint, niceStep } from "@/lib/bias/footprint";
 import type { LiqLevel } from "@/lib/cohorts/cohorts";
 import type { VolState } from "@/lib/vol/use-vol";
 import { rollingRv } from "@/lib/vol/options";
-import { CHART_INTERVALS, type ChartInterval, type OrderflowState } from "@/lib/hooks/use-orderflow";
-import { AbsorptionBoxLayer, BandLayer, BarStatsLayer, BubbleLayer, FootprintLayer, HeatmapLayer, ProfileLayer } from "./primitives";
+import { barEnd, CHART_INTERVALS, type ChartInterval, type OrderflowState } from "@/lib/hooks/use-orderflow";
+import { AbsorptionBoxLayer, BandLayer, BarStatsLayer, BubbleLayer, CountdownLayer, FootprintLayer, HeatmapLayer, ProfileLayer } from "./primitives";
 import { oiRegime, REGIME_STYLE, useFundingHistory, useOiHistory } from "@/lib/flow/use-positioning";
 import { cn } from "@/lib/utils";
 
@@ -46,6 +51,31 @@ const UP_VOL = "rgba(31,184,128,0.28)";
 const DOWN_VOL = "rgba(239,68,68,0.28)";
 const AXIS_TEXT = "#8A8A91";
 const FONT = "Inter, -apple-system, BlinkMacSystemFont, sans-serif";
+
+// ─── Chart type & price scale (toolbar) ─────────────────────────
+export type ChartType = "candles" | "hollow" | "heikin" | "bars" | "line" | "area";
+export const CHART_TYPES: { id: ChartType; label: string }[] = [
+  { id: "candles", label: "Candles" },
+  { id: "hollow", label: "Hollow candles" },
+  { id: "heikin", label: "Heikin Ashi" },
+  { id: "bars", label: "Bars" },
+  { id: "line", label: "Line" },
+  { id: "area", label: "Area" },
+];
+export type ScaleMode = "normal" | "log" | "pct";
+/** One-shot view commands from the toolbar; bump n to fire again. */
+export interface ViewCmd { n: number; kind: "fit" | "reset" }
+const LINE_COLOR = "#EDEDEF";
+const CLEAR = "rgba(0,0,0,0)";
+/** Candle series styling per chart type. Line / area / bars draw on their own series,
+ *  so the candle series stays as an invisible anchor (legend, layers, markers, price lines). */
+function candleStyle(type: ChartType, footprint: boolean) {
+  if (footprint) return { upColor: "rgba(31,184,128,0.10)", downColor: "rgba(239,68,68,0.10)", borderUpColor: "rgba(31,184,128,0.35)", borderDownColor: "rgba(239,68,68,0.35)", wickUpColor: UP, wickDownColor: DOWN, lastValueVisible: true, priceLineVisible: true };
+  if (type === "bars" || type === "line" || type === "area")
+    return { upColor: CLEAR, downColor: CLEAR, borderUpColor: CLEAR, borderDownColor: CLEAR, wickUpColor: CLEAR, wickDownColor: CLEAR, lastValueVisible: false, priceLineVisible: false };
+  if (type === "hollow") return { upColor: CLEAR, downColor: DOWN, borderUpColor: UP, borderDownColor: DOWN, wickUpColor: UP, wickDownColor: DOWN, lastValueVisible: true, priceLineVisible: true };
+  return { upColor: UP, downColor: DOWN, borderUpColor: UP, borderDownColor: DOWN, wickUpColor: UP, wickDownColor: DOWN, lastValueVisible: true, priceLineVisible: true };
+}
 
 export type IndicatorId = "vwap" | "vpvr" | "profile" | "heatmap" | "footprint" | "bubbles" | "liqs" | "delta" | "cvd" | "dvol" | "rv" | "gex" | "oi" | "regimes" | "funding" | "absorption" | "barstats";
 export type IndicatorState = "off" | "on" | "hidden";
@@ -119,17 +149,31 @@ interface Props {
   setIndicators: (f: (i: Indicators) => Indicators) => void;
   liqLevels: LiqLevel[];
   vol?: VolState;
+  chartType?: ChartType;
+  scaleMode?: ScaleMode;
+  viewCmd?: ViewCmd;
+  /** Called when the view nears the oldest loaded candle. */
+  onNeedOlder?: () => void;
 }
 
 interface Hover {
   o: number; h: number; l: number; c: number; v?: number; t: number;
 }
 
-export function OrderflowChart({ of, coin, interval, indicators, setIndicators, liqLevels, vol }: Props) {
+export function OrderflowChart({ of, coin, interval, indicators, setIndicators, liqLevels, vol, chartType = "candles", scaleMode = "normal", viewCmd, onNeedOlder }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const altRef = useRef<ISeriesApi<"Bar"> | ISeriesApi<"Line"> | ISeriesApi<"Area"> | null>(null);
+  const countdownRef = useRef<CountdownLayer | null>(null);
+  const intervalRef = useRef<ChartInterval>(interval);
+  intervalRef.current = interval;
+  const typeRef = useRef<ChartType>(chartType);
+  typeRef.current = chartType;
+  const needOlderRef = useRef(onNeedOlder);
+  needOlderRef.current = onNeedOlder;
+  const [awayFromLive, setAwayFromLive] = useState(false);
   const vwapRef = useRef<ISeriesApi<"Line"> | null>(null);
   const vwapBandRefs = useRef<ISeriesApi<"Line">[]>([]);
   const bandRef = useRef<BandLayer | null>(null);
@@ -212,21 +256,31 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
         secondsVisible: false,
         rightOffset: 8,
         barSpacing: 7,
-        tickMarkFormatter: (t: number) => {
+        fixLeftEdge: true, // can't scroll into empty space before the oldest candle HL serves
+        // TradingView-style ticks: year / month / day at those boundaries, clock time otherwise.
+        tickMarkFormatter: (t: number, type: TickMarkType) => {
           const d = new Date(t * 1000);
-          return d.getHours() === 0 && d.getMinutes() === 0
-            ? d.toLocaleDateString([], { day: "numeric", month: "short" })
-            : d.toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit" });
+          if (type === TickMarkType.Year) return String(d.getFullYear());
+          if (type === TickMarkType.Month) return d.toLocaleDateString([], { month: "short" });
+          if (type === TickMarkType.DayOfMonth) return String(d.getDate());
+          return d.toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit" });
         },
       },
       localization: {
+        // Crosshair label: date only on daily-and-up charts.
         timeFormatter: (t: number) =>
-          new Date(t * 1000).toLocaleString([], { hour12: false, weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }),
+          new Date(t * 1000).toLocaleString([], CHART_INTERVALS[intervalRef.current] >= 86_400_000
+            ? { weekday: "short", day: "numeric", month: "short", year: "2-digit" }
+            : { hour12: false, weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }),
       },
     });
     candleRef.current = c.addSeries(CandlestickSeries, {
-      upColor: UP, downColor: DOWN, borderUpColor: UP, borderDownColor: DOWN, wickUpColor: UP, wickDownColor: DOWN,
+      ...candleStyle(typeRef.current, false),
+      // Line / area charts scale to their own series (closes), not the hidden wicks.
+      autoscaleInfoProvider: (orig: () => AutoscaleInfo | null) => (typeRef.current === "line" || typeRef.current === "area" ? null : orig()),
     });
+    countdownRef.current = new CountdownLayer();
+    candleRef.current.attachPrimitive(countdownRef.current);
     volRef.current = c.addSeries(HistogramSeries, {
       priceScaleId: "vol", priceFormat: { type: "volume" }, priceLineVisible: false, lastValueVisible: false,
     });
@@ -300,6 +354,8 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
       c.remove();
       chartRef.current = null;
       candleRef.current = null;
+      altRef.current = null;
+      countdownRef.current = null;
       deltaRef.current = null;
       cvdRef.current = null;
       dvolRef.current = null;
@@ -336,6 +392,10 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
         if (!r) return;
         const a = Math.floor(r.from), b = Math.ceil(r.to);
         setVis((p) => (p && p.a === a && p.b === b ? p : { a, b }));
+        // Near the oldest loaded bar → fetch the page before it (TradingView-style infinite scroll back).
+        if (r.from < 40) needOlderRef.current?.();
+        const away = c.timeScale().scrollPosition() < -3;
+        setAwayFromLive((p) => (p === away ? p : away));
       });
     };
     c.timeScale().subscribeVisibleLogicalRangeChange(onRange);
@@ -345,6 +405,39 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
       try { c.timeScale().unsubscribeVisibleLogicalRangeChange(onRange); } catch { /* ignore */ }
     };
   }, []);
+
+  const displayCandles = useMemo(
+    () => (!chart ? [] : chartType === "heikin" ? heikinAshi(chart.candles) : chart.candles),
+    [chart, chartType]
+  );
+
+  // ── Price scale mode (normal / log / percent) on the price pane ──
+  useEffect(() => {
+    const c = chartRef.current;
+    if (!c) return;
+    const mode = scaleMode === "log" ? PriceScaleMode.Logarithmic : scaleMode === "pct" ? PriceScaleMode.Percentage : PriceScaleMode.Normal;
+    try { c.priceScale("right", 0).applyOptions({ mode, autoScale: true }); } catch { /* ignore */ }
+  }, [scaleMode]);
+
+  // ── View commands: fit the price axis, or reset the whole view to live ──
+  const resetView = () => {
+    const c = chartRef.current;
+    if (!c) return;
+    try {
+      c.timeScale().applyOptions({ barSpacing: 7 });
+      c.timeScale().scrollToPosition(8, false); // jump (not animate) to live with the usual right margin
+    } catch { /* ignore */ }
+    setAwayFromLive(false);
+    for (let i = 0; i < c.panes().length; i++) { try { c.priceScale("right", i).applyOptions({ autoScale: true }); } catch { /* ignore */ } }
+  };
+  useEffect(() => {
+    const c = chartRef.current;
+    if (!c || !viewCmd || viewCmd.n === 0) return;
+    if (viewCmd.kind === "fit") {
+      for (let i = 0; i < c.panes().length; i++) { try { c.priceScale("right", i).applyOptions({ autoScale: true }); } catch { /* ignore */ } }
+    } else resetView();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewCmd?.n]);
 
   // ── Lower pane (delta / CVD): created only when one is on ──
   useEffect(() => {
@@ -671,12 +764,37 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
     }
   }, [vol?.surface, of.lastPx, indicators.gex]);
 
+  // ── Chart type: bars / line / area get their own series on the price pane ──
+  useEffect(() => {
+    const c = chartRef.current;
+    if (!c) return;
+    if (altRef.current) { try { c.removeSeries(altRef.current); } catch { /* ignore */ } altRef.current = null; }
+    const common = { priceLineVisible: true, lastValueVisible: true };
+    if (chartType === "bars") altRef.current = c.addSeries(BarSeries, { ...common, upColor: UP, downColor: DOWN, thinBars: false }, 0);
+    else if (chartType === "line") altRef.current = c.addSeries(LineSeries, { ...common, color: LINE_COLOR, lineWidth: 2, crosshairMarkerVisible: true, crosshairMarkerRadius: 3 }, 0);
+    else if (chartType === "area") altRef.current = c.addSeries(AreaSeries, { ...common, lineColor: LINE_COLOR, topColor: "rgba(237,237,239,0.16)", bottomColor: "rgba(237,237,239,0)", lineWidth: 2, crosshairMarkerVisible: true, crosshairMarkerRadius: 3 }, 0);
+    if (altRef.current && precRef.current >= 0) {
+      const p = precRef.current;
+      altRef.current.applyOptions({ priceFormat: { type: "price", precision: p, minMove: Math.pow(10, -p) } });
+    }
+    dataKeyRef.current = ""; // force a full redraw in the new style
+    try { c.priceScale("right", 0).applyOptions({ autoScale: true }); } catch { /* ignore */ }
+  }, [chartType]);
+
   // ── Candles, volume, VWAP, delta/CVD ──
   useEffect(() => {
     const cs = candleRef.current;
-    if (!cs || !chart || !chart.candles.length) return;
+    if (!chart || !chart.candles.length) {
+      // Between timeframes: hide the countdown so it doesn't hang at the old price.
+      if (countdownRef.current) { countdownRef.current.price = null; countdownRef.current.refresh(); }
+      return;
+    }
+    if (!cs) return;
     const k = chart.candles;
     const last = k[k.length - 1];
+    // What the price pane draws: Heikin Ashi transforms the candles; everything else uses them as-is.
+    const disp = displayCandles;
+    const dLast = disp[disp.length - 1];
 
     const p = precisionFor(last.c);
     if (p !== precRef.current) {
@@ -684,18 +802,34 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
       const fmt = { type: "price" as const, precision: p, minMove: Math.pow(10, -p) };
       cs.applyOptions({ priceFormat: fmt });
       vwapRef.current?.applyOptions({ priceFormat: fmt });
+      altRef.current?.applyOptions({ priceFormat: fmt });
     }
 
-    const key = `${chart.coin}|${chart.interval}|${k[0].t}|${k.length}`;
+    const key = `${chart.coin}|${chart.interval}|${chartType}|${k[0].t}|${k.length}`;
     try {
       const volBar = (c: typeof last) => ({ time: ts(c.t), value: c.v * c.c, color: c.c >= c.o ? UP_VOL : DOWN_VOL });
+      const ohlc = (c: typeof last) => ({ time: ts(c.t), open: c.o, high: c.h, low: c.l, close: c.c });
+      const alt = altRef.current;
+      const altPt = (c: typeof last) => (chartType === "bars" ? ohlc(c) : { time: ts(c.t), value: c.c });
       if (key === dataKeyRef.current) {
-        cs.update({ time: ts(last.t), open: last.o, high: last.h, low: last.l, close: last.c });
+        cs.update(ohlc(dLast));
+        (alt as ISeriesApi<"Line"> | null)?.update(altPt(dLast) as never);
         volRef.current?.update(volBar(last));
       } else {
         dataKeyRef.current = key;
-        cs.setData(k.map((c) => ({ time: ts(c.t), open: c.o, high: c.h, low: c.l, close: c.c })));
+        cs.setData(disp.map(ohlc));
+        (alt as ISeriesApi<"Line"> | null)?.setData(disp.map(altPt) as never);
         volRef.current?.setData(k.map(volBar));
+      }
+      // Countdown under the last-price label, coloured like that label.
+      const cd = countdownRef.current;
+      if (cd) {
+        cd.price = dLast.c;
+        cd.endsAt = barEnd(last.t, chart.interval);
+        const lineLike = chartType === "line" || chartType === "area";
+        cd.back = lineLike ? LINE_COLOR : dLast.c >= dLast.o ? UP : DOWN;
+        cd.text = lineLike ? "#0B0B0D" : "#FFFFFF";
+        cd.refresh();
       }
       const vw = on(indicators.vwap) ? vwapSeries(k) : [];
       vwapRef.current?.setData(vw.map((x) => ({ time: ts(x.t), value: x.v })));
@@ -741,7 +875,7 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
     } catch {
       dataKeyRef.current = "";
     }
-  }, [chart, indicators.vwap, indicators.delta, indicators.cvd, showLower]);
+  }, [chart, displayCandles, chartType, indicators.vwap, indicators.delta, indicators.cvd, showLower]);
 
   // ── High / low of the visible range (small labels, no markers drawn) ──
   useEffect(() => {
@@ -806,13 +940,9 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
       }
       fpWasOn.current = fp.enabled;
     }
-    candleRef.current?.applyOptions(
-      fp.enabled
-        ? { upColor: "rgba(31,184,128,0.10)", downColor: "rgba(239,68,68,0.10)", borderUpColor: "rgba(31,184,128,0.35)", borderDownColor: "rgba(239,68,68,0.35)" }
-        : { upColor: UP, downColor: DOWN, borderUpColor: UP, borderDownColor: DOWN }
-    );
+    candleRef.current?.applyOptions(candleStyle(chartType, fp.enabled));
     for (const l of [heat, fp, bub]) l.refresh();
-  }, [chart, of.layers, of.allPrints, of.whaleMin, interval, indicators.heatmap, indicators.footprint, indicators.bubbles]);
+  }, [chart, of.layers, of.allPrints, of.whaleMin, interval, chartType, indicators.heatmap, indicators.footprint, indicators.bubbles]);
 
   // ── Profile layer + POC/VA axis pills + liquidation pills ──
   useEffect(() => {
@@ -851,7 +981,7 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
   }, [profile, vpvr, liqLevels, of.lastPx, indicators.profile, indicators.vpvr, indicators.liqs, indicators.footprint]);
 
   // ── Legend values (hover, else latest) ──
-  const lastK = chart?.candles[chart.candles.length - 1];
+  const lastK = displayCandles[displayCandles.length - 1];
   const leg = hover ?? (lastK ? { o: lastK.o, h: lastK.h, l: lastK.l, c: lastK.c, v: lastK.v * lastK.c, t: lastK.t } : null);
   const prec = leg ? precisionFor(leg.c) : 2;
   const chg = leg ? leg.c - leg.o : 0;
@@ -1001,6 +1131,15 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
       )}
 
       {!chart && <div className="absolute inset-0 flex items-center justify-center text-[12px] text-txt-muted">Loading chart…</div>}
+      {awayFromLive && chart && (
+        <button
+          onClick={resetView}
+          title="Scroll to the latest bar"
+          className="absolute bottom-9 right-[78px] z-20 h-7 px-2.5 rounded-full border border-border bg-[#0F0F12]/95 text-[12px] text-txt-secondary hover:text-txt-primary flex items-center gap-1"
+        >
+          Latest <span aria-hidden>»</span>
+        </button>
+      )}
     </div>
   );
 }
