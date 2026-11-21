@@ -508,7 +508,7 @@ function BiasCard({ bias, of }: { bias: BiasResult | null; of: OrderflowState })
         <span>Buyers</span>
       </div>
 
-      <p className="mt-4 text-[12.5px] text-txt-secondary leading-[1.5]">{bias.summary} Context, not a call: direction from flow tested at coin-flip.</p>
+      <p className="mt-4 text-[12.5px] text-txt-secondary leading-[1.5]">{bias.summary}</p>
 
       {of.mtf && <MtfRow mtf={of.mtf} />}
 

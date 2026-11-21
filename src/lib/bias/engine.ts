@@ -537,7 +537,7 @@ export function buildSummary(direction: BiasResult["direction"], avail: Signal[]
     if (ranked.length >= 2 && sign(ranked[0].score) !== sign(ranked[1].score)) {
       return `Mixed: ${lower(ranked[0].label)} and ${lower(ranked[1].label)} disagree. No edge from flow right now.`;
     }
-    return "Flow is balanced — no side has control. Standing aside is a position.";
+    return "Flow is balanced — no side has control.";
   }
   const lead = ranked.filter((s) => sign(s.score) === (direction === "long" ? 1 : -1)).slice(0, 2);
   const against = ranked.find((s) => sign(s.score) === (direction === "long" ? -1 : 1));
