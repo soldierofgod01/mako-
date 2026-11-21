@@ -465,15 +465,17 @@ function BiasCard({ bias, of }: { bias: BiasResult | null; of: OrderflowState })
   const dirColor = bias.direction === "long" ? "text-positive" : bias.direction === "short" ? "text-negative" : "text-txt-secondary";
   const markerLeft = `${(bias.score + 100) / 2}%`;
   const warm = Math.min(1, bias.tapeMinutes / WARMUP_MINUTES);
+  // Accent light only when the read is directional — colour means something.
+  const glow =
+    bias.direction === "neutral" ? undefined
+      : `radial-gradient(120% 70% at 85% -10%, ${bias.direction === "long" ? "rgba(31,184,128," : "rgba(239,68,68,"}${bias.strength === "strong" ? 0.16 : 0.08}), transparent 65%)`;
   return (
-    <div className="ds-panel p-4 relative overflow-hidden">
+    <div className="ds-panel ds-panel-signature p-4 relative overflow-hidden">
+      {glow && <div className="absolute inset-0 pointer-events-none" style={{ background: glow }} />}
       <div className="relative">
       <div className="flex items-start justify-between">
         <div>
-          <div className="ds-label mb-1 flex items-center gap-1.5">
-            Order-flow lean
-            <span className="rounded-full bg-white/[0.06] px-1.5 py-[1px] text-[10px] text-txt-muted normal-case tracking-normal" title="Tested on recorded data: no edge predicting direction at 15m, 1h or 4h. Shown as context only.">no proven edge</span>
-          </div>
+          <div className="ds-label mb-1">Order-flow lean</div>
           <div className={cn("text-[18px] font-semibold tracking-[-0.01em] leading-none", dirColor)}>
             {dirText}
             {bias.direction !== "neutral" && (
