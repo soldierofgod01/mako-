@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { BarChart3, Check, ChevronDown, Search } from "lucide-react";
 import { CaretRight, Info, SidebarSimple } from "@phosphor-icons/react";
 import { useAppStore } from "@/stores/app-store";
-import { useOrderflow, CHART_INTERVALS, type ChartInterval, type OrderflowState } from "@/lib/hooks/use-orderflow";
+import { useOrderflow, CHART_INTERVALS, horizonForInterval, type ChartInterval, type OrderflowState } from "@/lib/hooks/use-orderflow";
 import { DEFAULT_INDICATORS, INDICATORS, OrderflowChart, PARKED_INDICATORS, type Indicators } from "./orderflow-chart";
 import { OrderBookPanel } from "./order-book";
 import { BottomPanel } from "./bottom-panel";
@@ -12,7 +12,10 @@ import { useVol } from "@/lib/vol/use-vol";
 import { useRegime } from "@/lib/bias/use-regime";
 import { RegimeCard, RegimeChip } from "./regime-card";
 import { TokenIcon } from "@/components/scanner/token-icon";
-import { fmtUsd, WARMUP_MINUTES, type BiasResult, type Signal } from "@/lib/bias/engine";
+import { fmtUsd, HORIZONS, WARMUP_MINUTES, type BiasResult, type Signal } from "@/lib/bias/engine";
+
+/** Warm-up length for the horizon this read is on. */
+const warmupFor = (b: BiasResult | null | undefined) => HORIZONS.find((h) => h.id === b?.horizon)?.warmupMin ?? WARMUP_MINUTES;
 import { fmtPrice } from "@/lib/bias/format";
 import { cn } from "@/lib/utils";
 
@@ -111,7 +114,7 @@ export function BiasModule() {
           <aside className="terminal-side w-[320px] xl:w-[340px] shrink-0 overflow-y-auto rounded-xl">
             <div className="flex flex-col gap-2">
               <RegimeCard regime={regime} livePx={of.lastPx ?? null} />
-              <BiasCard bias={of.bias} of={of} />
+              <BiasCard bias={of.bias} of={of} active={horizonForInterval(interval)} />
               <EvidenceList bias={of.bias} />
             </div>
           </aside>
@@ -274,7 +277,7 @@ function PullBar({ v }: { v: number }) {
 
 function StatusStrip({ of }: { of: OrderflowState }) {
   const tapeMin = of.bias ? Math.floor(of.bias.tapeMinutes) : 0;
-  const warm = of.bias ? Math.min(1, of.bias.tapeMinutes / WARMUP_MINUTES) : 0;
+  const warm = of.bias ? Math.min(1, of.bias.tapeMinutes / warmupFor(of.bias)) : 0;
   const feed = of.status === "live" ? "Feed live" : of.status === "connecting" ? "Connecting" : "Feed blocked";
   return (
     <div className="h-5 shrink-0 flex items-center gap-4 px-2 text-[11px] text-txt-muted">
@@ -284,7 +287,7 @@ function StatusStrip({ of }: { of: OrderflowState }) {
         {feed}
       </span>
       <span className="ds-num">Tape {tapeMin} min</span>
-      {of.bias?.source === "recorder" && <span>Bias from 24/7 recorder · live read in {Math.max(1, Math.ceil(WARMUP_MINUTES - (of.bias?.tapeMinutes ?? 0)))} min</span>}
+      {of.bias?.source === "recorder" && <span>Bias from 24/7 recorder · live read in {Math.max(1, Math.ceil(warmupFor(of.bias) - (of.bias?.tapeMinutes ?? 0)))} min</span>}
       {of.bias?.warmingUp && <span className="ds-num">Bias warm-up {Math.floor(warm * 100)}%</span>}
       {of.ctxError && <span className="text-negative">Market data delayed</span>}
     </div>
@@ -457,14 +460,14 @@ export function CoinPicker({ coin, onPick }: { coin: string; onPick: (c: string)
 
 // ─── Bias card ──────────────────────────────────────────────────
 
-function BiasCard({ bias, of }: { bias: BiasResult | null; of: OrderflowState }) {
+function BiasCard({ bias, of, active }: { bias: BiasResult | null; of: OrderflowState; active: "5m" | "15m" | "1h" }) {
   if (!bias) {
     return <div className="ds-panel ds-panel-signature h-[190px] skeleton" />;
   }
   const dirText = bias.direction === "long" ? "Leaning long" : bias.direction === "short" ? "Leaning short" : "Neutral";
   const dirColor = bias.direction === "long" ? "text-positive" : bias.direction === "short" ? "text-negative" : "text-txt-secondary";
   const markerLeft = `${(bias.score + 100) / 2}%`;
-  const warm = Math.min(1, bias.tapeMinutes / WARMUP_MINUTES);
+  const warm = Math.min(1, bias.tapeMinutes / warmupFor(bias));
   // Accent light only when the read is directional — colour means something.
   const glow =
     bias.direction === "neutral" ? undefined
@@ -512,7 +515,7 @@ function BiasCard({ bias, of }: { bias: BiasResult | null; of: OrderflowState })
 
       <p className="mt-4 text-[12.5px] text-txt-secondary leading-[1.5]">{bias.summary}</p>
 
-      {of.mtf && <MtfRow mtf={of.mtf} />}
+      {of.mtf && <MtfRow mtf={of.mtf} active={active} />}
 
       <div className="mt-4 grid grid-cols-2 gap-2">
         <MiniStat label="Agree / against" value={`${bias.agreeing} / ${bias.opposing}`} />
@@ -528,13 +531,13 @@ function BiasCard({ bias, of }: { bias: BiasResult | null; of: OrderflowState })
       {bias.source === "recorder" && (
         <p className="mt-3 text-[11.5px] text-txt-muted leading-[1.5]">
           From Mako&rsquo;s 24/7 recorder (updated {fmtAge(bias.recorderAgeSec ?? 0)} ago) while this tab reads the tape.
-          Switches to the live read in {Math.max(1, Math.ceil(WARMUP_MINUTES - bias.tapeMinutes))} min.
+          Switches to the live read in {Math.max(1, Math.ceil(warmupFor(bias) - bias.tapeMinutes))} min.
         </p>
       )}
       {bias.warmingUp && (
         <div className="mt-4">
           <div className="flex justify-between ds-label mb-1.5">
-            <span>Reading the tape — bias firms up after {WARMUP_MINUTES} min</span>
+            <span>Reading the tape — bias firms up after {warmupFor(bias)} min</span>
             <span className="ds-num">{Math.floor(warm * 100)}%</span>
           </div>
           <div className="h-1 rounded-full bg-elevated overflow-hidden">
@@ -564,7 +567,7 @@ function MiniStat({ label, value }: { label: string; value: string }) {
 
 // ─── Multi-timeframe ────────────────────────────────────────────
 
-function MtfRow({ mtf }: { mtf: NonNullable<OrderflowState["mtf"]> }) {
+function MtfRow({ mtf, active }: { mtf: NonNullable<OrderflowState["mtf"]>; active: "5m" | "15m" | "1h" }) {
   const items = [mtf["5m"], mtf["15m"], mtf["1h"]];
   const dirs = items.filter((b) => !b.warmingUp).map((b) => b.direction);
   const conflict = dirs.includes("long") && dirs.includes("short");
@@ -574,7 +577,7 @@ function MtfRow({ mtf }: { mtf: NonNullable<OrderflowState["mtf"]> }) {
         {items.map((b) => {
           const tone = b.direction === "long" ? "text-positive" : b.direction === "short" ? "text-negative" : "text-txt-secondary";
           return (
-            <div key={b.horizon} className={cn("rounded-[8px] border px-2.5 py-2", b.horizon === "15m" ? "border-border-strong bg-elevated/40" : "border-border bg-void")}>
+            <div key={b.horizon} className={cn("rounded-[8px] border px-2.5 py-2", b.horizon === active ? "border-border-strong bg-elevated/40" : "border-border bg-void")}>
               <div className="flex items-baseline justify-between">
                 <span className="ds-num text-[11px] text-txt-muted">{b.horizon}{b.source === "recorder" && <span className="ml-1 text-txt-dim" title="From the 24/7 recorder until this tab's tape warms up">rec</span>}</span>
                 <span className={cn("ds-num text-[12.5px] font-semibold", b.warmingUp ? "text-txt-dim" : tone)}>
@@ -593,7 +596,7 @@ function MtfRow({ mtf }: { mtf: NonNullable<OrderflowState["mtf"]> }) {
           ? "Timeframes disagree — short-term flow is fighting the bigger picture. Expect chop or a turn."
           : items.every((b) => !b.warmingUp && b.direction === items[0].direction && b.direction !== "neutral")
             ? "All timeframes agree."
-            : "15m is the main read. 5m = right now, 1h = bigger picture (needs ~20 min of tape)."}
+            : `Highlighted tile matches your chart timeframe (${active}). 5m = right now, 1h = bigger picture (needs ~20 min of tape).`}
       </p>
     </div>
   );

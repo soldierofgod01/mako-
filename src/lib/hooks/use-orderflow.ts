@@ -27,6 +27,10 @@ const HEAT_KEEP_MS = 45 * 60_000;
 export type { CvdPoint };
 export const CHART_INTERVALS = { "1m": 60_000, "5m": 300_000, "15m": 900_000, "1h": 3_600_000, "4h": 14_400_000 } as const;
 export type ChartInterval = keyof typeof CHART_INTERVALS;
+/** Which bias horizon matches a chart timeframe: 1m/5m → 5m, 15m → 15m, 1h/4h → 1h. */
+export function horizonForInterval(iv: ChartInterval): "5m" | "15m" | "1h" {
+  return iv === "1m" || iv === "5m" ? "5m" : iv === "15m" ? "15m" : "1h";
+}
 
 export interface CohortsResponse {
   coin: string;
@@ -735,7 +739,8 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
           return applySmoothing(r, sm[id].update(r.score, now));
         };
         const mtf = { "5m": read("5m"), "15m": read("15m"), "1h": read("1h") };
-        const bias = mtf["15m"];
+        // Headline lean follows the chart timeframe.
+        const bias = mtf[horizonForInterval(intervalRef.current)];
 
         const iv = intervalRef.current;
         const ivMs = CHART_INTERVALS[iv];
