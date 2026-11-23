@@ -80,7 +80,7 @@ export function RegimeCard({ regime, livePx }: { regime: RegimeState; livePx: nu
       <div className="relative">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="ds-label mb-1">Range regime · next 4h</div>
+            <div className="ds-label mb-1">Next 4h · range</div>
             <div className={cn("text-[24px] font-semibold tracking-[-0.02em] leading-[1.05]", t.text)}>{copy.title}</div>
             <div className="text-[13px] text-txt-primary mt-1.5">{copy.line}</div>
           </div>
@@ -100,6 +100,9 @@ export function RegimeCard({ regime, livePx }: { regime: RegimeState; livePx: nu
         </div>
 
         {regime.h1 && <OneHourRow r={regime.h1} px={livePx} />}
+        {regime.h1 && fitLine(regime.h1.state, r.state) && (
+          <p className="mt-2 text-[12px] text-txt-secondary leading-[1.45]">{fitLine(regime.h1.state, r.state)}</p>
+        )}
 
       </div>
     </div>
@@ -140,7 +143,7 @@ function OneHourRow({ r, px }: { r: RegimeRead; px: number | null }) {
     <div className="mt-2 rounded-[8px] border border-border bg-void px-2.5 py-2">
     <div className="flex items-center justify-between gap-2">
       <div className="min-w-0">
-        <div className="ds-label text-[11px]">Next 1h</div>
+        <div className="ds-label text-[11px]">Next 1h · range</div>
         <div className={cn("text-[12.5px] font-medium", t.text)}>{STATE_COPY[r.state].title}</div>
       </div>
       <div className="text-right ds-num text-[11.5px] text-txt-secondary leading-[1.4]">
@@ -151,6 +154,15 @@ function OneHourRow({ r, px }: { r: RegimeRead; px: number | null }) {
     {broke && <div className="mt-1 text-[11.5px] text-txt-primary">{broke}</div>}
     </div>
   );
+}
+
+const isBreak = (s: RState) => s === "breakout";
+const isHold = (s: RState) => s === "hold" || s === "lean-hold";
+/** The 1h range sits inside the 4h one, so the two reads can differ without contradicting. */
+function fitLine(h1: RState, h4: RState): string | null {
+  if (isBreak(h1) && isHold(h4)) return "The tight 1h range will likely break, but the wider 4h range should contain the move.";
+  if (isHold(h1) && isBreak(h4)) return "Quiet for now: the 1h range may hold, but the 4h range is likely to break later.";
+  return null;
 }
 
 function Mini({ label, value }: { label: string; value: string }) {

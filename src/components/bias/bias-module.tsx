@@ -378,13 +378,22 @@ function ChartTypeIcon({ t }: { t: ChartType }) {
 
 function EvidenceList({ bias }: { bias: BiasResult | null }) {
   const [openId, setOpenId] = useState<string | null>(null);
+  const [shown, setShown] = useState(false);
   if (!bias) return null;
+  if (!shown) {
+    return (
+      <button onClick={() => setShown(true)} className="ds-panel h-10 px-4 flex items-center justify-between text-left ds-row-hover">
+        <span className="text-[12.5px] font-medium text-txt-secondary">Why · {bias.signals.filter((s) => s.available).length} signals</span>
+        <CaretRight size={12} className="text-txt-muted" />
+      </button>
+    );
+  }
   return (
     <div className="ds-panel">
-      <div className="h-10 px-4 flex items-center justify-between border-b border-border">
-        <span className="text-[13px] font-semibold text-txt-primary">Evidence</span>
-        <span className="text-[11px] text-txt-muted">weight · pull</span>
-      </div>
+      <button onClick={() => setShown(false)} className="w-full h-10 px-4 flex items-center justify-between border-b border-border text-left">
+        <span className="text-[13px] font-semibold text-txt-primary">Why</span>
+        <span className="flex items-center gap-2 text-[11px] text-txt-muted">weight · pull <CaretRight size={12} className="rotate-90" /></span>
+      </button>
       {bias.signals.map((s) => (
         <EvidenceRow key={s.id} s={s} open={openId === s.id} onToggle={() => setOpenId((v) => (v === s.id ? null : s.id))} />
       ))}
@@ -449,10 +458,6 @@ function StatusStrip({ of }: { of: OrderflowState }) {
       {of.ctxError && <span className="text-negative">Market data delayed</span>}
     </div>
   );
-}
-
-function fmtAge(sec: number) {
-  return sec < 90 ? `${sec}s` : `${Math.round(sec / 60)} min`;
 }
 
 const Dot = ({ ok, warn }: { ok: boolean; warn?: boolean }) => (
@@ -635,25 +640,25 @@ function BiasCard({ bias, of, active }: { bias: BiasResult | null; of: Orderflow
       <div className="relative">
       <div className="flex items-start justify-between">
         <div>
-          <div className="ds-label mb-1">Order-flow lean</div>
-          <div className={cn("text-[18px] font-semibold tracking-[-0.01em] leading-none", dirColor)}>
+          <div className="ds-label mb-1" title="Who is pushing right now. Context, not a trade call: direction tested at coin-flip.">Flow context</div>
+          <div className={cn("text-[15px] font-semibold tracking-[-0.01em] leading-none", dirColor)}>
             {dirText}
             {bias.direction !== "neutral" && (
-              <span className="ml-2 text-[13px] font-medium text-txt-secondary capitalize">{bias.strength}</span>
+              <span className="ml-2 text-[12px] font-medium text-txt-secondary capitalize">{bias.strength}</span>
             )}
           </div>
         </div>
         <div className="text-right">
-          <div className={cn("ds-num text-[18px] font-semibold leading-none", dirColor)}>
+          <div className={cn("ds-num text-[15px] font-semibold leading-none", dirColor)}>
             {bias.score > 0 ? "+" : ""}
             {bias.score}
           </div>
-          <div className="ds-label mt-1">score / 100</div>
+          <div className="ds-label mt-1" title={`${bias.agreeing} signals agree, ${bias.opposing} against · ${Math.round(bias.coverage * 100)}% data coverage`}>score / 100</div>
         </div>
       </div>
 
       {/* Gauge */}
-      <div className="mt-5 relative h-2 rounded-full bg-elevated overflow-hidden">
+      <div className="mt-4 relative h-2 rounded-full bg-elevated overflow-hidden">
         <div className="absolute inset-y-0 left-0 w-[40%] bg-negative/15" />
         <div className="absolute inset-y-0 right-0 w-[40%] bg-positive/15" />
         <div className="absolute inset-y-0 left-1/2 w-px bg-border-strong" />
@@ -670,25 +675,15 @@ function BiasCard({ bias, of, active }: { bias: BiasResult | null; of: Orderflow
         <span>Buyers</span>
       </div>
 
-      <p className="mt-4 text-[12.5px] text-txt-secondary leading-[1.5]">{bias.summary}</p>
+      <p className="mt-3 text-[12.5px] text-txt-secondary leading-[1.45]">{bias.summary}</p>
 
       {of.mtf && <MtfRow mtf={of.mtf} active={active} />}
 
-      <div className="mt-4 grid grid-cols-2 gap-2">
-        <MiniStat label="Agree / against" value={`${bias.agreeing} / ${bias.opposing}`} />
-        <MiniStat label="Data coverage" value={`${Math.round(bias.coverage * 100)}%`} />
-      </div>
 
       {of.restored && of.restored.minutes > 0 && (
         <p className="mt-3 text-[11.5px] text-txt-muted">
           Resumed {of.restored.minutes} min of saved tape
           {of.restored.gapSec > 90 ? ` · ${Math.round(of.restored.gapSec / 60)} min gap while away (not reconstructed)` : ""}.
-        </p>
-      )}
-      {bias.source === "recorder" && (
-        <p className="mt-3 text-[11.5px] text-txt-muted leading-[1.5]">
-          From Mako&rsquo;s 24/7 recorder (updated {fmtAge(bias.recorderAgeSec ?? 0)} ago) while this tab reads the tape.
-          Switches to the live read in {Math.max(1, Math.ceil(warmupFor(bias) - bias.tapeMinutes))} min.
         </p>
       )}
       {bias.warmingUp && (
@@ -711,16 +706,6 @@ function BiasCard({ bias, of, active }: { bias: BiasResult | null; of: Orderflow
     </div>
   );
 }
-
-function MiniStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-[8px] bg-void border border-border px-2.5 py-2">
-      <div className="ds-label text-[11px]">{label}</div>
-      <div className="ds-num text-[13px] text-txt-primary mt-0.5">{value}</div>
-    </div>
-  );
-}
-
 
 // ─── Multi-timeframe ────────────────────────────────────────────
 
@@ -748,13 +733,7 @@ function MtfRow({ mtf, active }: { mtf: NonNullable<OrderflowState["mtf"]>; acti
           );
         })}
       </div>
-      <p className="mt-2 text-[11.5px] text-txt-muted leading-[1.45]">
-        {conflict
-          ? "Timeframes disagree — short-term flow is fighting the bigger picture. Expect chop or a turn."
-          : items.every((b) => !b.warmingUp && b.direction === items[0].direction && b.direction !== "neutral")
-            ? "All timeframes agree."
-            : `Highlighted tile matches your chart timeframe (${active}). 5m = right now, 1h = bigger picture (needs ~20 min of tape).`}
-      </p>
+      {conflict && <p className="mt-2 text-[11.5px] text-txt-muted leading-[1.45]">Timeframes disagree: expect chop.</p>}
     </div>
   );
 }

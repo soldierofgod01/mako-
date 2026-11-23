@@ -535,14 +535,14 @@ export function buildSummary(direction: BiasResult["direction"], avail: Signal[]
     .sort((a, b) => Math.abs(b.weight * b.score) - Math.abs(a.weight * a.score));
   if (direction === "neutral") {
     if (ranked.length >= 2 && sign(ranked[0].score) !== sign(ranked[1].score)) {
-      return `Mixed: ${lower(ranked[0].label)} and ${lower(ranked[1].label)} disagree. No edge from flow right now.`;
+      return `Mixed: ${lower(ranked[0].label)} and ${lower(ranked[1].label)} disagree.`;
     }
     return "Flow is balanced — no side has control.";
   }
   const lead = ranked.filter((s) => sign(s.score) === (direction === "long" ? 1 : -1)).slice(0, 2);
   const against = ranked.find((s) => sign(s.score) === (direction === "long" ? -1 : 1));
   const side = direction === "long" ? "Buyers" : "Sellers";
-  let out = `${side} have the edge`;
+  let out = `${side} more aggressive`;
   if (lead.length) out += `, led by ${lead.map((s) => lower(s.label)).join(" and ")}`;
   out += ".";
   if (against) out += ` Watch ${lower(against.label)} — it's leaning the other way.`;
