@@ -15,9 +15,9 @@ const FEATURES: Feature[] = [
     title: "Will the range break or hold?",
     body: "Mako reads the last 4 hours of price and volatility on any Hyperliquid perp and tells you how likely the range is to break, against how often it usually does.",
     img: "/f-regime.webp",
-    w: 333,
-    h: 320,
-    alt: "Mako range regime card on BTC reading Breakout likely: 87% chance the 4h range breaks, against a usual 72%",
+    w: 336,
+    h: 327,
+    alt: "Mako range regime card on BTC reading Range likely holds: 41% chance the 4h range breaks, against a usual 72%",
   },
   {
     title: "Every perp, screened for the setups that matter.",
