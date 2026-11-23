@@ -127,14 +127,14 @@ export function VolPanel({ vol, px }: { vol: VolState; px: number | null }) {
           {tiles.map((t) => (
             <div key={t.label} className="rounded-[10px] bg-void border border-border px-3 py-2.5">
               <div className="flex items-baseline justify-between gap-2">
-                <span className="text-[11px] text-txt-muted truncate">{t.label}</span>
-                <span className={cn("ds-num text-[15px] font-semibold whitespace-nowrap",
+                <span className="text-[12px] text-txt-secondary truncate">{t.label}</span>
+                <span className={cn("ds-num text-[17px] font-semibold whitespace-nowrap",
                   t.tone === "pos" ? "text-positive" : t.tone === "neg" ? "text-negative" : t.tone === "warn" ? "text-warning" : "text-txt-primary")}>
                   {t.value}
                 </span>
               </div>
-              {t.sub && <div className="ds-num text-[10.5px] text-txt-dim mt-0.5 truncate">{t.sub}</div>}
-              <p className="text-[11.5px] text-txt-secondary leading-[1.4] mt-1">{t.read}</p>
+              {t.sub && <div className="ds-num text-[12px] text-txt-muted mt-0.5 truncate">{t.sub}</div>}
+              <p className="text-[13px] text-[#C2C2C8] leading-[1.45] mt-1">{t.read}</p>
             </div>
           ))}
         </div>
@@ -150,10 +150,10 @@ function CoverageLine({ vol }: { vol: VolState }) {
       : vol.coverage === "thin" ? `Deribit ${vol.coin}_USDC options · thin market, IV and gamma are noisier`
         : `${vol.coin} has no listed options — realised vol only`;
   return (
-    <div className="flex items-center gap-2 text-[11px] text-txt-muted">
+    <div className="flex items-center gap-2 text-[12px] text-txt-secondary">
       <span className={cn("w-1.5 h-1.5 rounded-full", vol.error ? "bg-negative" : vol.coverage === "full" ? "bg-positive" : vol.coverage === "thin" ? "bg-warning" : "bg-txt-muted")} />
       {vol.error ? "Couldn't reach Deribit from this network" : txt}
-      {vol.updatedAt && <span className="text-txt-dim">· updated {new Date(vol.updatedAt).toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit" })}</span>}
+      {vol.updatedAt && <span className="text-txt-muted">· updated {new Date(vol.updatedAt).toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit" })}</span>}
     </div>
   );
 }
@@ -171,8 +171,8 @@ function GexBars({ vol, spot }: { vol: VolState; spot: number }) {
   return (
     <div className="w-[260px] shrink-0 rounded-[10px] bg-void border border-border px-3 py-2.5 flex flex-col">
       <div className="flex items-baseline justify-between">
-        <span className="text-[11px] text-txt-muted">Gamma by strike · ±10%</span>
-        <span className="text-[10.5px] text-txt-dim">$ per 1%</span>
+        <span className="text-[12px] text-txt-secondary">Gamma by strike · ±10%</span>
+        <span className="text-[12px] text-txt-muted">$ per 1%</span>
       </div>
       <div className="mt-1.5 flex flex-col">
         {rows.map((r, i) => (
@@ -180,22 +180,22 @@ function GexBars({ vol, spot }: { vol: VolState; spot: number }) {
             {i === spotIdx && (
               <div className="flex items-center gap-1.5 my-0.5">
                 <span className="flex-1 h-px bg-border-strong" />
-                <span className="ds-num text-[10px] text-txt-primary">{fmtPrice(spot)}</span>
+                <span className="ds-num text-[11.5px] text-txt-primary">{fmtPrice(spot)}</span>
                 <span className="flex-1 h-px bg-border-strong" />
               </div>
             )}
-            <div className="grid grid-cols-[64px_1fr_52px] items-center h-[17px] gap-1.5 ds-num text-[10.5px]">
+            <div className="grid grid-cols-[64px_1fr_52px] items-center h-[19px] gap-1.5 ds-num text-[12px]">
               <span className="text-right text-txt-secondary">{fmtStrike(r.strike)}</span>
               <div className="relative h-2">
                 <div className="absolute inset-y-0 left-0 rounded-sm bg-[#A78BFA]/60" style={{ width: `${(r.abs / max) * 100}%` }} />
               </div>
-              <span className="text-right text-txt-muted">{usd(r.abs)}</span>
+              <span className="text-right text-txt-secondary">{usd(r.abs)}</span>
             </div>
           </div>
         ))}
-        {rows.length === 0 && <span className="text-[11.5px] text-txt-muted mt-1">No meaningful gamma near price.</span>}
+        {rows.length === 0 && <span className="text-[13px] text-txt-secondary mt-1">No meaningful gamma near price.</span>}
       </div>
-      <p className="mt-auto pt-2 text-[10.5px] text-txt-dim leading-[1.4]">
+      <p className="mt-auto pt-2 text-[12px] text-txt-muted leading-[1.4]">
         Gamma from open interest, calls and puts combined. Which side dealers hold isn&rsquo;t public, so no direction is shown.
       </p>
     </div>

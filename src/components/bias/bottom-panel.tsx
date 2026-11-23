@@ -77,8 +77,8 @@ export function BottomPanel({ of, vol, coin }: { of: OrderflowState; vol: VolSta
             key={t.id}
             onClick={() => { setTab(t.id); persist("mako:bottom:tab", t.id); if (!open) { setOpen(true); persist("mako:bottom:open", "1"); } }}
             className={cn(
-              "h-7 px-3 rounded-full text-[12px] font-medium transition-colors",
-              open && tab === t.id ? "bg-elevated-2 text-txt-primary" : "text-txt-muted hover:text-txt-primary"
+              "h-7 px-3 rounded-full text-[13px] font-medium transition-colors",
+              open && tab === t.id ? "bg-elevated-2 text-txt-primary" : "text-txt-secondary hover:text-txt-primary"
             )}
           >
             {t.label}
@@ -87,7 +87,7 @@ export function BottomPanel({ of, vol, coin }: { of: OrderflowState; vol: VolSta
         <button
           onClick={() => setOpen((v) => { persist("mako:bottom:open", v ? "0" : "1"); return !v; })}
           title={open ? "Collapse" : "Expand"}
-          className="ml-auto w-7 h-7 rounded-full flex items-center justify-center text-txt-muted hover:text-txt-primary hover:bg-elevated"
+          className="ml-auto w-7 h-7 rounded-full flex items-center justify-center text-txt-secondary hover:text-txt-primary hover:bg-elevated"
         >
           {open ? <CaretDown size={14} /> : <CaretUp size={14} />}
         </button>
@@ -107,7 +107,7 @@ export function BottomPanel({ of, vol, coin }: { of: OrderflowState; vol: VolSta
 }
 
 const Note = ({ children }: { children: React.ReactNode }) => (
-  <p className="text-[11.5px] text-txt-muted leading-[1.5]">{children}</p>
+  <p className="text-[13px] text-txt-secondary leading-[1.5]">{children}</p>
 );
 
 // ─── Sharps vs donors ───────────────────────────────────────────
@@ -121,7 +121,7 @@ function Cohorts({ of }: { of: OrderflowState }) {
   return (
     <div className="px-4 py-3 grid grid-cols-[180px_1fr_1fr] gap-6 items-start">
       <div>
-        <div className="text-[11.5px] text-txt-muted">Divergence</div>
+        <div className="text-[13px] text-txt-secondary">Divergence</div>
         <div className={cn("ds-num text-[22px] font-semibold leading-tight", div >= 20 ? "text-positive" : div <= -20 ? "text-negative" : "text-txt-primary")}>
           {d ? `${div > 0 ? "+" : ""}${div}` : "—"}
         </div>
@@ -133,7 +133,7 @@ function Cohorts({ of }: { of: OrderflowState }) {
           <CohortRow label="Donors" sub={`${c.tracked.donors} biggest losers`} side={d.donors} />
         </>
       ) : (
-        <div className="col-span-2 text-[12px] text-txt-muted pt-1">No tracked wallets hold this coin right now.</div>
+        <div className="col-span-2 text-[13px] text-txt-secondary pt-1">No tracked wallets hold this coin right now.</div>
       )}
     </div>
   );
@@ -146,15 +146,15 @@ function CohortRow({ label, sub, side }: { label: string; sub: string; side: Coh
   return (
     <div>
       <div className="flex items-baseline justify-between mb-1.5">
-        <span className="text-[12.5px] font-medium text-txt-primary">
-          {label} <span className="text-txt-muted font-normal">· {n} wallet{n === 1 ? "" : "s"} · {sub}</span>
+        <span className="text-[13.5px] font-medium text-txt-primary">
+          {label} <span className="text-txt-secondary font-normal">· {n} wallet{n === 1 ? "" : "s"} · {sub}</span>
         </span>
-        <span className="ds-num text-[11.5px] text-txt-secondary">{gross > 0 ? `${Math.round(longPct)}% long` : "no positions"}</span>
+        <span className="ds-num text-[13px] text-txt-secondary">{gross > 0 ? `${Math.round(longPct)}% long` : "no positions"}</span>
       </div>
       <div className="h-2 rounded-full bg-negative/40 overflow-hidden flex">
         <div className="h-full bg-positive/80" style={{ width: `${longPct}%` }} />
       </div>
-      <div className="flex justify-between mt-1 ds-num text-[11px] text-txt-muted">
+      <div className="flex justify-between mt-1 ds-num text-[12px] text-txt-secondary">
         <span>L {usd(side.longUsd)} · {side.longWallets}</span>
         <span>{side.shortWallets} · S {usd(side.shortUsd)}</span>
       </div>
@@ -174,7 +174,7 @@ function Liqs({ of }: { of: OrderflowState }) {
   return (
     <div className="px-4 py-3">
       {above.length + below.length === 0 ? (
-        <div className="text-[12px] text-txt-muted">No tracked liquidations within 25% of price.</div>
+        <div className="text-[13px] text-txt-secondary">No tracked liquidations within 25% of price.</div>
       ) : (
         <div className="grid grid-cols-2 gap-6">
           <LiqTable title="Above price" rows={above} px={px} />
@@ -189,20 +189,20 @@ function Liqs({ of }: { of: OrderflowState }) {
 function LiqTable({ title, rows, px }: { title: string; rows: LiqLevel[]; px: number }) {
   return (
     <div>
-      <div className="grid grid-cols-[90px_1fr_64px_80px_44px] text-[10.5px] text-txt-muted h-5 items-center">
+      <div className="grid grid-cols-[90px_1fr_64px_80px_44px] text-[12px] text-txt-secondary h-5 items-center">
         <span>{title}</span><span>Price</span><span className="text-right">Distance</span><span className="text-right">Size</span><span className="text-right">Wallets</span>
       </div>
-      {rows.length === 0 && <div className="text-[12px] text-txt-muted h-6 flex items-center">None</div>}
+      {rows.length === 0 && <div className="text-[13px] text-txt-secondary h-6 flex items-center">None</div>}
       {rows.map((l, i) => {
         const longSide = l.longUsd >= l.shortUsd;
         const dist = ((l.px - px) / px) * 100;
         return (
-          <div key={i} className="grid grid-cols-[90px_1fr_64px_80px_44px] items-center h-6 text-[12px] ds-num">
+          <div key={i} className="grid grid-cols-[90px_1fr_64px_80px_44px] items-center h-6 text-[13px] ds-num">
             <span className={cn("font-medium", longSide ? "text-warning" : "text-[#60A5FA]")}>{longSide ? "Long liqs" : "Short liqs"}</span>
             <span className="text-txt-primary">{fmtPrice(l.px)}</span>
             <span className="text-right text-txt-secondary">{dist > 0 ? "+" : ""}{dist.toFixed(1)}%</span>
             <span className="text-right text-txt-primary">{usd(l.longUsd + l.shortUsd)}</span>
-            <span className="text-right text-txt-muted">{l.wallets}</span>
+            <span className="text-right text-txt-secondary">{l.wallets}</span>
           </div>
         );
       })}
@@ -214,19 +214,19 @@ function LiqTable({ title, rows, px }: { title: string; rows: LiqLevel[]; px: nu
 
 function Prints({ of }: { of: OrderflowState }) {
   if (of.bigPrints.length === 0) {
-    return <div className="px-4 py-3 text-[12px] text-txt-muted">No prints ≥ {usd(of.whaleMin)} yet this session.</div>;
+    return <div className="px-4 py-3 text-[13px] text-txt-secondary">No prints ≥ {usd(of.whaleMin)} yet this session.</div>;
   }
   return (
     <div className="px-2 py-1">
-      <div className="grid grid-cols-[70px_1fr_1fr_90px] px-2 h-6 items-center text-[10.5px] text-txt-muted">
+      <div className="grid grid-cols-[70px_1fr_1fr_90px] px-2 h-6 items-center text-[12px] text-txt-secondary">
         <span>Side</span><span>Size</span><span>Price</span><span className="text-right">Time</span>
       </div>
       {of.bigPrints.map((t, i) => (
-        <div key={`${t.t}-${i}`} className="grid grid-cols-[70px_1fr_1fr_90px] items-center px-2 h-7 ds-row-hover rounded-md ds-num text-[12px]">
+        <div key={`${t.t}-${i}`} className="grid grid-cols-[70px_1fr_1fr_90px] items-center px-2 h-7 ds-row-hover rounded-md ds-num text-[13px]">
           <span className={cn("font-medium", t.side === 1 ? "text-positive" : "text-negative")}>{t.side === 1 ? "Buy" : "Sell"}</span>
           <span className="text-txt-primary">{usd(t.usd)}</span>
           <span className="text-txt-secondary">{fmtPrice(t.px)}</span>
-          <span className="text-right text-txt-muted">{new Date(t.t).toLocaleTimeString([], { hour12: false })}</span>
+          <span className="text-right text-txt-secondary">{new Date(t.t).toLocaleTimeString([], { hour12: false })}</span>
         </div>
       ))}
     </div>

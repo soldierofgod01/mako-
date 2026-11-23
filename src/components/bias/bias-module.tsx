@@ -160,23 +160,22 @@ function MarketBar({ coin, onPick, of, regime, panelOpen, onTogglePanel }: {
   const fundingPct = ctx ? ctx.fundingHourly * 100 : null;
   const tone = chg >= 0 ? "text-positive" : "text-negative";
   return (
-    <div className="h-14 shrink-0 ds-card-panel flex items-center gap-5 pl-2 pr-3">
+    <div className="h-16 shrink-0 ds-card-panel flex items-center gap-6 pl-2 pr-3">
       <div className="flex items-center gap-2">
         <CoinPicker coin={coin} onPick={onPick} />
         {ctx?.maxLeverage ? (
           <span className="ds-num text-[10.5px] font-semibold text-positive bg-positive/10 rounded px-1.5 py-0.5">{ctx.maxLeverage}x</span>
         ) : null}
       </div>
-      <div className="flex flex-col leading-[1.15] min-w-[96px]">
-        <span className="ds-num text-[17px] font-semibold text-txt-primary">{fmtPrice(px)}</span>
-        <span className={cn("ds-num text-[11.5px]", ctx ? tone : "text-txt-muted")}>
+      <div className="flex flex-col leading-[1.15] min-w-[112px]">
+        <span className="ds-num text-[20px] font-semibold text-txt-primary">{fmtPrice(px)}</span>
+        <span className={cn("ds-num text-[12.5px]", ctx ? tone : "text-txt-muted")}>
           {ctx ? `${chg >= 0 ? "+" : ""}${chg.toFixed(2)}%` : "—"}
         </span>
       </div>
       <Sep />
       <Stat wide label="24h change" value={ctx && chgAbs != null ? `${chgAbs >= 0 ? "+" : "−"}${Math.abs(chgAbs) >= 1 ? Math.abs(chgAbs).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : fmtPrice(Math.abs(chgAbs))}` : "—"} tone={ctx ? (chg >= 0 ? "pos" : "neg") : undefined} />
       <Stat label="Mark" value={ctx ? fmtPrice(ctx.markPx) : "—"} />
-      <Stat wide label="Oracle" value={ctx ? fmtPrice(ctx.oraclePx) : "—"} />
       <Stat label="24h volume" value={ctx ? usd(ctx.volume24hUsd) : "—"} />
       <Stat label="Open interest" value={ctx ? usd(ctx.oiUsd) : "—"} />
       <Stat
@@ -207,8 +206,8 @@ const Sep = () => <span className="w-px h-7 bg-border shrink-0" />;
 function Stat({ label, value, tone, wide }: { label: string; value: string; tone?: "pos" | "neg"; wide?: boolean }) {
   return (
     <div className={cn("hidden flex-col leading-[1.2] shrink-0", wide ? "xl:flex" : "lg:flex")}>
-      <span className="text-[11px] text-txt-muted whitespace-nowrap">{label}</span>
-      <span className={cn("ds-num text-[12.5px] font-medium whitespace-pre", tone === "pos" ? "text-positive" : tone === "neg" ? "text-negative" : "text-txt-primary")}>{value}</span>
+      <span className="text-[11.5px] text-txt-muted whitespace-nowrap">{label}</span>
+      <span className={cn("ds-num text-[14.5px] font-medium whitespace-pre mt-0.5", tone === "pos" ? "text-positive" : tone === "neg" ? "text-negative" : "text-txt-primary")}>{value}</span>
     </div>
   );
 }
