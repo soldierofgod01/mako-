@@ -277,20 +277,21 @@ void main() {
 `
 
 const UNIFORMS = {
-  colors: [[1,0,0],[1,1,1],[1,1,1],[1,1,1],[1,1,1],[1,1,1],[1,1,1],[1,1,1]] as [number, number, number][],
+  // Mako dark: electric-blue wave at the bottom fading into near-black
+  colors: [[0.04,0.24,1.0],[0.02,0.06,0.22],[0.012,0.012,0.018],[0.008,0.008,0.01],[0,0,0],[0,0,0],[0,0,0],[0,0,0]] as [number, number, number][],
   colorCount: 4,
   scale: 1.320,
   intensity: 0.490,
   paramA: 0.840,
   warp: 0.006,
   detail: 1.728,
-  contrast: 1.077,
-  brightness: 0.110,
-  saturation: 2.000,
-  hue: 2.2689,
+  contrast: 1.0,
+  brightness: 0.0,
+  saturation: 1.0,
+  hue: 0.0,
   vignette: 0.000,
   blur: 0.0400,
-  grain: 0.115,
+  grain: 0.06,
   seed: 4984.0,
   rotate: 3.3685,
   offsetX: -0.130,

@@ -9,7 +9,7 @@ export function AuthFrame({ children }: { children: ReactNode }) {
       <ShaderBackground className="absolute inset-0 h-full w-full" />
       <div className="relative z-10 min-h-screen flex flex-col items-center justify-center px-4 py-10">
         {children}
-        <p className="mt-5 text-[11px] text-white/70">Mako is in private beta · access by invite</p>
+        <p className="mt-5 text-[11px] text-txt-muted">Mako is in private beta · access by invite</p>
       </div>
     </div>
   );
