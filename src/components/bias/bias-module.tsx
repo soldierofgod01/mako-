@@ -378,22 +378,13 @@ function ChartTypeIcon({ t }: { t: ChartType }) {
 
 function EvidenceList({ bias }: { bias: BiasResult | null }) {
   const [openId, setOpenId] = useState<string | null>(null);
-  const [shown, setShown] = useState(false);
   if (!bias) return null;
-  if (!shown) {
-    return (
-      <button onClick={() => setShown(true)} className="ds-panel h-10 px-4 flex items-center justify-between text-left ds-row-hover">
-        <span className="text-[12.5px] font-medium text-txt-secondary">Why · {bias.signals.filter((s) => s.available).length} signals</span>
-        <CaretRight size={12} className="text-txt-muted" />
-      </button>
-    );
-  }
   return (
     <div className="ds-panel">
-      <button onClick={() => setShown(false)} className="w-full h-10 px-4 flex items-center justify-between border-b border-border text-left">
-        <span className="text-[13px] font-semibold text-txt-primary">Why</span>
-        <span className="flex items-center gap-2 text-[11px] text-txt-muted">weight · pull <CaretRight size={12} className="rotate-90" /></span>
-      </button>
+      <div className="h-10 px-4 flex items-center justify-between border-b border-border">
+        <span className="text-[13px] font-semibold text-txt-primary">Evidence</span>
+        <span className="text-[11px] text-txt-muted">weight · pull</span>
+      </div>
       {bias.signals.map((s) => (
         <EvidenceRow key={s.id} s={s} open={openId === s.id} onToggle={() => setOpenId((v) => (v === s.id ? null : s.id))} />
       ))}
