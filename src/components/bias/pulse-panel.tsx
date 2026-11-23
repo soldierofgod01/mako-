@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { fmtPrice } from "@/lib/bias/format";
-import type { OrderflowState } from "@/lib/hooks/use-orderflow";
+import type { CohortsResponse } from "@/lib/hooks/use-orderflow";
 import type { VolState } from "@/lib/vol/use-vol";
 import { BAND_LABEL, GROUPS, groupSummary, usdShort, type Band, type PulseMetric } from "@/lib/pulse/pulse";
 import { usePulse } from "@/lib/pulse/use-pulse";
@@ -60,9 +60,9 @@ const BAND_TONE: Record<Band, string> = {
   high: "text-txt-primary bg-white/[0.10]",
 };
 
-export function PulsePanel({ of, vol, coin }: { of: OrderflowState; vol: VolState; coin: string }) {
+export function PulsePanel({ vol, coin, oiUsd }: { vol: VolState; coin: string; oiUsd: number | null }) {
   const depth = useDepth(coin);
-  const p = usePulse(coin, vol, of.ctx?.oiUsd ?? null, depth);
+  const p = usePulse(coin, vol, oiUsd, depth);
   if (p.loading && !p.metrics.length) {
     return <div className="p-3 grid grid-cols-4 gap-2">{Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-[92px] skeleton" />)}</div>;
   }
@@ -127,10 +127,9 @@ function MetricCard({ m }: { m: PulseMetric }) {
 /** Round a price label to 3 significant figures (68,205.3 → 68,200). */
 const roundTo = (x: number) => { const m = 10 ** (Math.floor(Math.log10(Math.abs(x))) - 2); return Math.round(x / m) * m; };
 
-export function CostBasisPanel({ of }: { of: OrderflowState }) {
-  const px = of.lastPx ?? of.ctx?.markPx ?? null;
-  const entries = of.cohorts?.data?.entries ?? null;
-  const tracked = of.cohorts ? of.cohorts.tracked.sharps + of.cohorts.tracked.donors : 0;
+export function CostBasisPanel({ px, cohorts }: { px: number | null; cohorts: CohortsResponse | null | undefined }) {
+  const entries = cohorts?.data?.entries ?? null;
+  const tracked = cohorts ? cohorts.tracked.sharps + cohorts.tracked.donors : 0;
 
   const view = useMemo(() => {
     if (!entries?.length || !px) return null;
@@ -158,7 +157,7 @@ export function CostBasisPanel({ of }: { of: OrderflowState }) {
     return { longs: side(true), shorts: side(false), bins: bins.reverse(), outside, span };
   }, [entries, px]);
 
-  if (!of.cohorts) return <div className="m-4 h-[120px] skeleton" />;
+  if (!cohorts) return <div className="m-4 h-[120px] skeleton" />;
   if (!view || !px) return <div className="px-4 py-3 text-[13px] text-txt-secondary">No tracked wallets hold this coin right now.</div>;
   const max = Math.max(...view.bins.map((b) => Math.max(b.long, b.short)), 1);
   const pxRow = view.bins.findIndex((b) => px >= b.lo && px < b.hi);

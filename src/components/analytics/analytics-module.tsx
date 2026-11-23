@@ -4,6 +4,10 @@ import { useQuery } from "@tanstack/react-query";
 import { useAppStore } from "@/stores/app-store";
 import { CoinPicker, fmtPrice } from "@/components/bias/bias-module";
 import { BarChart, Panel, Stat, TimeChart, type SeriesSpec } from "./charts";
+import { CostBasisPanel, PulsePanel } from "@/components/bias/pulse-panel";
+import { VolPanel } from "@/components/bias/vol-panel";
+import { useVol } from "@/lib/vol/use-vol";
+import type { CohortsResponse } from "@/lib/hooks/use-orderflow";
 import { cn } from "@/lib/utils";
 
 // ════════════════════════════════════════════════════════════════
@@ -78,6 +82,20 @@ export function AnalyticsModule() {
     refetchOnWindowFocus: false,
   });
 
+  // "Now" section: same queries (and cache keys) the Terminal uses.
+  const px = ctxData?.ctx.markPx ?? null;
+  const vol = useVol(biasCoin, px, 3_600_000);
+  const { data: cohorts } = useQuery({
+    queryKey: ["bias-cohorts", biasCoin],
+    queryFn: async (): Promise<CohortsResponse> => {
+      const r = await fetch(`/api/cohorts?coin=${encodeURIComponent(biasCoin)}`);
+      if (!r.ok) throw new Error("cohorts failed");
+      return r.json();
+    },
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: false,
+  });
+
   const S = useMemo(() => {
     if (!data) return null;
     // Window anchored on the newest data point, so charts only rebuild when data or range change.
@@ -130,7 +148,21 @@ export function AnalyticsModule() {
         </div>
       </div>
 
-      <div className="p-3">
+      <div className="p-3 flex flex-col gap-3">
+        <SectionTitle title="Now" sub="Where this coin stands today vs its own history" />
+        <NowCard title="Market pulse">
+          <PulsePanel vol={vol} coin={biasCoin} oiUsd={ctxData?.ctx.oiUsd ?? null} />
+        </NowCard>
+        <NowCard title="Volatility">
+          <VolPanel vol={vol} px={px} />
+        </NowCard>
+        <NowCard title="Trader cost basis" sub="Where tracked Hyperliquid wallets entered">
+          <CostBasisPanel px={px} cohorts={cohorts && cohorts.coin === biasCoin ? cohorts : null} />
+        </NowCard>
+        <SectionTitle title="History" sub={range === "1W" ? "Last 7 days" : "Last 30 days"} />
+      </div>
+
+      <div className="px-3 pb-3">
         {isError ? (
           <div className="py-24 text-center text-[13px] text-txt-muted">Couldn&rsquo;t load analytics for {biasCoin}. Retrying…</div>
         ) : isLoading || !data || !S ? (
@@ -164,9 +196,13 @@ export function AnalyticsModule() {
             <Panel title={`${biasCoin} Average Return by Hour (UTC)`} note={`1h candles, last 30 days · current hour highlighted`}>
               <BarChart data={data.byHour.map((h) => ({ label: String(h.hour), value: h.avg }))} format={fmtPct3} highlight={nowHour} xEvery={3} />
             </Panel>
-            <Panel title={`${biasCoin} Average Return by Day (UTC)`} note={`Daily candles, last ${data.hours.days} days · today highlighted`}>
-              <BarChart data={data.byWeekday.map((d) => ({ label: d.label, value: d.avg }))} format={fmtPct2} highlight={today} />
-            </Panel>
+            <div className="xl:col-span-2 min-w-0 flex">
+              <div className="flex-1 min-w-0 [&>section]:h-full">
+                <Panel title={`${biasCoin} Average Return by Day (UTC)`} note={`Daily candles, last ${data.hours.days} days · today highlighted`}>
+                  <BarChart data={data.byWeekday.map((d) => ({ label: d.label, value: d.avg }))} format={fmtPct2} highlight={today} />
+                </Panel>
+              </div>
+            </div>
           </div>
         )}
         <p className="px-1 pt-4 pb-6 text-[11.5px] text-txt-muted max-w-[900px] leading-[1.55]">
@@ -176,5 +212,26 @@ export function AnalyticsModule() {
         </p>
       </div>
     </div>
+  );
+}
+
+function SectionTitle({ title, sub }: { title: string; sub?: string }) {
+  return (
+    <div className="flex items-baseline gap-3 px-1 pt-1">
+      <h2 className="text-[16px] font-semibold text-txt-primary tracking-[-0.01em]">{title}</h2>
+      {sub && <span className="text-[12.5px] text-txt-muted">{sub}</span>}
+    </div>
+  );
+}
+
+function NowCard({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
+  return (
+    <section className="rounded-lg border border-border bg-[#0C0C0F] min-w-0 overflow-hidden">
+      <div className="h-11 px-4 flex items-center gap-3 border-b border-border">
+        <h3 className="text-[14px] font-semibold text-txt-primary tracking-[-0.01em]">{title}</h3>
+        {sub && <span className="text-[12px] text-txt-muted">{sub}</span>}
+      </div>
+      {children}
+    </section>
   );
 }

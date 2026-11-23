@@ -8,7 +8,7 @@ import { useOrderflow, CHART_INTERVALS, INTERVAL_LABEL, horizonForInterval, type
 import { CHART_TYPES, DEFAULT_INDICATORS, INDICATORS, OrderflowChart, PARKED_INDICATORS, type ChartType, type Indicators, type ScaleMode, type ViewCmd } from "./orderflow-chart";
 import { OrderBookPanel } from "./order-book";
 import { BottomPanel } from "./bottom-panel";
-import { useVol } from "@/lib/vol/use-vol";
+import { useVol, type VolState } from "@/lib/vol/use-vol";
 import { useRegime } from "@/lib/bias/use-regime";
 import { RegimeCard, RegimeChip } from "./regime-card";
 import { TokenIcon } from "@/components/scanner/token-icon";
@@ -110,7 +110,7 @@ export function BiasModule() {
 
   return (
     <div className="flex-1 flex flex-col gap-2 overflow-hidden">
-      <MarketBar coin={biasCoin} onPick={setBiasCoin} of={of} regime={regime} panelOpen={panelOpen} onTogglePanel={togglePanel} />
+      <MarketBar coin={biasCoin} onPick={setBiasCoin} of={of} vol={vol} regime={regime} panelOpen={panelOpen} onTogglePanel={togglePanel} />
       <div className="flex-1 flex gap-2 min-h-0">
         <div className="flex-1 min-w-0 flex flex-col gap-2">
           <div className="flex-1 min-h-0 flex gap-2">
@@ -130,7 +130,7 @@ export function BiasModule() {
               <OrderBookPanel feed={of.live} coin={biasCoin} whaleMin={of.whaleMin} />
             </div>
           </div>
-          <BottomPanel of={of} vol={vol} coin={biasCoin} />
+          <BottomPanel of={of} />
         </div>
         {panelOpen && (
           <aside className="terminal-side w-[320px] xl:w-[340px] shrink-0 overflow-y-auto rounded-xl">
@@ -149,8 +149,8 @@ export function BiasModule() {
 
 // ─── Market bar ─────────────────────────────────────────────────
 
-function MarketBar({ coin, onPick, of, regime, panelOpen, onTogglePanel }: {
-  coin: string; onPick: (c: string) => void; of: OrderflowState; regime: ReturnType<typeof useRegime>; panelOpen: boolean; onTogglePanel: () => void;
+function MarketBar({ coin, onPick, of, vol, regime, panelOpen, onTogglePanel }: {
+  coin: string; onPick: (c: string) => void; of: OrderflowState; vol: VolState; regime: ReturnType<typeof useRegime>; panelOpen: boolean; onTogglePanel: () => void;
 }) {
   const ctx = of.ctx;
   const countdown = useFundingCountdown();
@@ -183,6 +183,7 @@ function MarketBar({ coin, onPick, of, regime, panelOpen, onTogglePanel }: {
         value={fundingPct == null ? "—" : `${fundingPct >= 0 ? "+" : ""}${fundingPct.toFixed(4)}%  ${countdown}`}
         tone={fundingPct == null ? undefined : fundingPct * 8 > 0.03 ? "neg" : fundingPct * 8 < -0.01 ? "pos" : undefined}
       />
+      <VolStat vol={vol} />
       <div className="ml-auto flex items-center gap-2">
         <RegimeChip regime={regime} />
         <button
@@ -198,6 +199,28 @@ function MarketBar({ coin, onPick, of, regime, panelOpen, onTogglePanel }: {
         </button>
       </div>
     </div>
+  );
+}
+
+/** Implied vs realised vol at a glance; click for the full read in Analytics. */
+function VolStat({ vol }: { vol: VolState }) {
+  const setActiveModule = useAppStore((s) => s.setActiveModule);
+  const iv = vol.dvolNow ?? vol.surface?.atm30 ?? null;
+  const rv = vol.rv?.d30 ?? null;
+  if (iv == null && rv == null) return null;
+  const daily = iv != null ? iv / Math.sqrt(365) : null;
+  return (
+    <button
+      onClick={() => setActiveModule("analytics")}
+      title="Implied vol (options) vs 30-day realised vol, and the daily move options price in. Full read in Analytics."
+      className="hidden xl:flex flex-col leading-[1.2] shrink-0 text-left rounded-md px-1.5 -mx-1.5 hover:bg-elevated"
+    >
+      <span className="text-[11.5px] text-txt-muted whitespace-nowrap">Vol · IV / RV</span>
+      <span className="ds-num text-[14.5px] font-medium text-txt-primary mt-0.5 whitespace-nowrap">
+        {iv != null ? iv.toFixed(0) : "—"} / {rv != null ? rv.toFixed(0) : "—"}
+        {daily != null && <span className="text-txt-secondary text-[12.5px]"> · ±{daily.toFixed(1)}%/day</span>}
+      </span>
+    </button>
   );
 }
 
