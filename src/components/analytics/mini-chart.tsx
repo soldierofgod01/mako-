@@ -10,20 +10,24 @@ import { cn } from "@/lib/utils";
 // Measured width (no viewBox stretching), so strokes and dots stay crisp.
 // ════════════════════════════════════════════════════════════════
 
-/** Width of an element, re-measured on resize. Callback ref, so it works even when the element mounts after the first render. */
-export function useWidth<T extends HTMLElement>() {
+/** Size of an element, re-measured on resize. Callback ref, so it works even when the element mounts after the first render. */
+export function useSize<T extends HTMLElement>() {
   const [node, setNode] = useState<T | null>(null);
-  const [w, setW] = useState(0);
+  const [size, setSize] = useState({ w: 0, h: 0 });
   const ref = useCallback((el: T | null) => {
     setNode(el);
-    if (el) setW(Math.floor(el.getBoundingClientRect().width));
+    if (el) { const r = el.getBoundingClientRect(); setSize({ w: Math.floor(r.width), h: Math.floor(r.height) }); }
   }, []);
   useEffect(() => {
     if (!node) return;
-    const ro = new ResizeObserver(([e]) => setW(Math.floor(e.contentRect.width)));
+    const ro = new ResizeObserver(([e]) => setSize({ w: Math.floor(e.contentRect.width), h: Math.floor(e.contentRect.height) }));
     ro.observe(node);
     return () => ro.disconnect();
   }, [node]);
+  return [ref, size.w, size.h] as const;
+}
+export function useWidth<T extends HTMLElement>() {
+  const [ref, w] = useSize<T>();
   return [ref, w] as const;
 }
 
@@ -32,15 +36,17 @@ const fmtDate = (t: number) => new Date(t).toLocaleDateString("en-GB", { day: "n
 // ─── Sparkline ──────────────────────────────────────────────────
 
 export function Sparkline({
-  series, range, bars, format, height = 52,
+  series, range, bars, format, height, fill,
 }: {
   series: { t: number; v: number }[];
   range?: { lo: number; hi: number };
   bars?: boolean;
   format: (v: number) => string;
   height?: number;
+  /** Grow to the parent's height (parent must be a flex column). */
+  fill?: boolean;
 }) {
-  const [ref, w] = useWidth<HTMLDivElement>();
+  const [ref, w, mh] = useSize<HTMLDivElement>();
   const [hover, setHover] = useState<number | null>(null);
   if (series.length < 2) return <div className="h-[52px]" />;
 
@@ -50,7 +56,7 @@ export function Sparkline({
   if (hi === lo) { hi += 1; lo -= 1; }
   const pad = (hi - lo) * 0.08;
   lo -= pad; hi += pad;
-  const H = height, PADX = 2;
+  const H = fill ? Math.max(44, mh) : height ?? 52, PADX = 2;
   const x = (i: number) => PADX + (i / (series.length - 1)) * Math.max(1, w - PADX * 2 - 4);
   const y = (v: number) => H - ((v - lo) / (hi - lo)) * H;
   const last = series[series.length - 1];
@@ -62,8 +68,8 @@ export function Sparkline({
   return (
     <div
       ref={ref}
-      className="relative mt-2"
-      style={{ height: H }}
+      className={cn("relative mt-2", fill && "flex-1 min-h-[44px]")}
+      style={fill ? undefined : { height: H }}
       onMouseMove={(e) => {
         if (!w) return;
         const r = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
@@ -113,17 +119,19 @@ export function Sparkline({
 export interface XYSeries { label: string; color: string; pts: { x: number; y: number }[]; dashed?: boolean }
 
 export function XYChart({
-  series, xFormat, yFormat, vlines = [], height = 200, className, xLabel,
+  series, xFormat, yFormat, vlines = [], height: fixedH, className, xLabel,
 }: {
   series: XYSeries[];
   xFormat: (x: number) => string;
   yFormat: (y: number) => string;
   vlines?: { x: number; label: string }[];
+  /** Fixed height; omit to fill the parent (which needs a definite height). */
   height?: number;
   className?: string;
   xLabel?: string;
 }) {
-  const [ref, w] = useWidth<HTMLDivElement>();
+  const [ref, w, mh] = useSize<HTMLDivElement>();
+  const height = fixedH ?? Math.max(160, mh);
   const [hx, setHx] = useState<number | null>(null);
   const all = series.flatMap((s) => s.pts);
   if (all.length < 2) return <div className={cn("flex items-center justify-center text-[13px] text-txt-secondary", className)} style={{ height }}>Not enough data.</div>;
@@ -142,10 +150,10 @@ export function XYChart({
   const nearest = (s: XYSeries, xv: number) => s.pts.reduce((b, p) => (Math.abs(p.x - xv) < Math.abs(b.x - xv) ? p : b), s.pts[0]);
 
   return (
-    <div className={cn("relative", className)}>
+    <div className={cn("relative", fixedH == null && "h-full", className)}>
       <div
         ref={ref}
-        style={{ height }}
+        style={fixedH != null ? { height: fixedH } : { position: "absolute", inset: 0 }}
         onMouseMove={(e) => {
           if (!w) return;
           const r = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
@@ -198,16 +206,18 @@ export function XYChart({
  * shorts' below, current price and each side's break-even marked.
  */
 export function EntryMap({
-  bins, px, longAvg, shortAvg, fmt, height = 220,
+  bins, px, longAvg, shortAvg, fmt, height: fixedH,
 }: {
   bins: { lo: number; hi: number; long: number; short: number }[]; // ascending by price
   px: number;
   longAvg: number | null;
   shortAvg: number | null;
   fmt: (v: number) => string;
+  /** Fixed height; omit to fill the parent (which needs a definite height). */
   height?: number;
 }) {
-  const [ref, w] = useWidth<HTMLDivElement>();
+  const [ref, w, mh] = useSize<HTMLDivElement>();
+  const height = fixedH ?? Math.max(200, mh);
   const [hi, setHi] = useState<number | null>(null);
   if (!bins.length) return null;
   const L = 8, R = 8, T = 16, B = 24;
@@ -225,10 +235,10 @@ export function EntryMap({
   ].filter((m) => m.v >= lo && m.v <= top);
 
   return (
-    <div className="relative">
+    <div className={cn("relative", fixedH == null && "h-full")}>
       <div
         ref={ref}
-        style={{ height }}
+        style={fixedH != null ? { height: fixedH } : { position: "absolute", inset: 0 }}
         onMouseMove={(e) => {
           if (!w) return;
           const r = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
@@ -270,6 +280,30 @@ export function EntryMap({
           <div className="text-negative">Shorts {usd(hb.short)}</div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Gauge (metrics without history) ────────────────────────────
+
+/** Horizontal scale with a marker; `zones` shade the ends. For live-only readings. */
+export function Gauge({ value, min, max, center, leftLabel, rightLabel, format }: {
+  value: number; min: number; max: number; center?: number; leftLabel: string; rightLabel: string; format: (v: number) => string;
+}) {
+  const pos = Math.max(0, Math.min(1, (value - min) / (max - min)));
+  const c = center != null ? (center - min) / (max - min) : null;
+  return (
+    <div className="mt-3 flex-1 flex flex-col justify-center">
+      <div className="relative h-2 rounded-full bg-elevated">
+        <div className="absolute inset-y-0 left-0 w-[20%] rounded-l-full bg-white/[0.06]" />
+        <div className="absolute inset-y-0 right-0 w-[20%] rounded-r-full bg-white/[0.06]" />
+        {c != null && <div className="absolute -inset-y-1 w-px bg-border-strong" style={{ left: `${c * 100}%` }} />}
+        <div className="absolute -top-[4px] w-[3px] h-4 rounded-full bg-txt-primary" style={{ left: `calc(${pos * 100}% - 1.5px)` }} />
+      </div>
+      <div className="flex justify-between mt-1.5 text-[11.5px] text-txt-muted">
+        <span>{leftLabel} · {format(min)}</span>
+        <span>{format(max)} · {rightLabel}</span>
+      </div>
     </div>
   );
 }

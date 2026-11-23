@@ -122,8 +122,8 @@ export function VolPanel({ vol, px }: { vol: VolState; px: number | null }) {
   }
 
   return (
-    <div className="p-3 flex flex-col gap-3 min-h-full">
-    <div className="flex gap-3">
+    <div className="p-3 flex flex-col gap-3 h-full">
+    <div className="flex gap-3 shrink-0">
       <div className="flex-1 min-w-0 flex flex-col gap-2">
         <CoverageLine vol={vol} />
         <div className="grid grid-cols-2 xl:grid-cols-4 gap-2">
@@ -155,12 +155,12 @@ const IV_C = "#B26BFF", RV_C = "#4C8DFF", CALL_C = "#2BD4D9", PUT_C = "#F0643C";
 
 function ChartBox({ title, sub, legend, children }: { title: string; sub?: string; legend?: { label: string; color: string; dashed?: boolean }[]; children: React.ReactNode }) {
   return (
-    <div className="rounded-lg border border-border bg-[#0C0C0F] px-3 pt-2.5 pb-2 min-w-0 flex flex-col">
+    <div className="rounded-lg border border-border bg-[#0C0C0F] px-3 pt-2.5 pb-2 min-w-0 min-h-0 flex flex-col">
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-[13px] font-semibold text-txt-primary">{title}</span>
         {sub && <span className="text-[12px] text-txt-muted truncate">{sub}</span>}
       </div>
-      <div className="mt-2 flex-1 min-h-0">{children}</div>
+      <div className="mt-2 flex-1 min-h-0 relative">{children}</div>
       {legend && (
         <div className="mt-1.5 flex items-center gap-4">
           {legend.map((l) => (
@@ -187,20 +187,19 @@ function VolCharts({ vol }: { vol: VolState }) {
   const cols = [ivrv.length > 0, term.length >= 3, !!smile].filter(Boolean).length;
   if (!cols) return null;
   return (
-    <div className={cn("grid gap-2 grid-cols-1", cols >= 3 ? "xl:grid-cols-3" : cols === 2 ? "xl:grid-cols-2" : "")}>
+    <div className={cn("flex-1 min-h-[280px] grid gap-3 grid-cols-1", cols >= 3 ? "xl:grid-cols-3" : cols === 2 ? "xl:grid-cols-2" : "")}>
       {ivrv.length > 0 && (
         <ChartBox
           title={ivSeries ? "Implied vs realised" : "Realised vol"}
           sub="last 30 days · annualised %"
           legend={[...(ivSeries ? [{ label: vol.dvolNow != null ? "DVOL (implied)" : "Implied", color: IV_C }] : []), { label: "Realised 30d", color: RV_C }]}
         >
-          <div className="h-[200px]"><TimeChart series={ivrv} format={(v) => v.toFixed(0)} /></div>
+          <div className="absolute inset-0"><TimeChart series={ivrv} format={(v) => v.toFixed(0)} /></div>
         </ChartBox>
       )}
       {term.length >= 3 && (
         <ChartBox title="Term structure" sub="ATM implied vol by expiry">
           <XYChart
-            height={200}
             series={[{ label: "ATM IV", color: IV_C, pts: term.map((p) => ({ x: p.days, y: p.atmIv })) }]}
             xFormat={(d) => `${Math.round(d)}d`}
             yFormat={(v) => v.toFixed(1)}
@@ -212,7 +211,6 @@ function VolCharts({ vol }: { vol: VolState }) {
       {smile && (
         <ChartBox title="Smile" sub={`IV by strike · ${fmtExp(smile.expiry)} expiry`} legend={[{ label: "OTM puts", color: PUT_C }, { label: "OTM calls", color: CALL_C }]}>
           <XYChart
-            height={200}
             series={[
               // Out-of-the-money side only (puts below price, calls above) — the standard smile.
               { label: "Put IV", color: PUT_C, pts: smile.pts.filter((p) => p.put != null && p.strike <= smile.fwd).map((p) => ({ x: p.strike, y: p.put! })) },

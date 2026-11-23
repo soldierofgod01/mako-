@@ -230,9 +230,14 @@ export function AnalyticsModule() {
           </div>
         </>
       )}
-      {view === "pulse" && <PulsePanel vol={vol} coin={biasCoin} oiUsd={ctxData?.ctx.oiUsd ?? null} />}
-      {view === "vol" && <VolPanel vol={vol} px={px} />}
-      {view === "basis" && <CostBasisPanel px={px} cohorts={cohorts && cohorts.coin === biasCoin ? cohorts : null} />}
+      {view !== "overview" && (
+        // Fill the space under the header so the views have no dead area at the bottom.
+        <div className="h-[calc(100%-57px)] min-h-[640px]">
+          {view === "pulse" && <PulsePanel vol={vol} coin={biasCoin} oiUsd={ctxData?.ctx.oiUsd ?? null} />}
+          {view === "vol" && <VolPanel vol={vol} px={px} />}
+          {view === "basis" && <CostBasisPanel px={px} cohorts={cohorts && cohorts.coin === biasCoin ? cohorts : null} />}
+        </div>
+      )}
     </div>
   );
 }
