@@ -67,7 +67,9 @@ export function Sparkline({
       onMouseMove={(e) => {
         if (!w) return;
         const r = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
-        const i = Math.round(((e.clientX - r.left - PADX) / Math.max(1, w - PADX * 2 - 4)) * (series.length - 1));
+        const i = bars
+          ? Math.floor(((e.clientX - r.left) / w) * series.length)
+          : Math.round(((e.clientX - r.left - PADX) / Math.max(1, w - PADX * 2 - 4)) * (series.length - 1));
         setHover(Math.max(0, Math.min(series.length - 1, i)));
       }}
       onMouseLeave={() => setHover(null)}
@@ -81,10 +83,12 @@ export function Sparkline({
           {range && <line x1={0} x2={w} y1={y(range.lo)} y2={y(range.lo)} stroke="rgba(255,255,255,0.12)" strokeDasharray="2 3" />}
           {bars ? (
             series.map((p, i) => {
-              const bw = Math.max(1, (w - 8) / series.length - 1);
+              // Each bar gets an equal slot across the width (works for 5 bars or 90).
+              const slot = w / series.length;
+              const bw = Math.max(1, Math.min(slot - 1.5, 28));
               const y0 = y(0), y1 = y(p.v);
               return (
-                <rect key={p.t} x={x(i) - bw / 2} width={bw} y={Math.min(y0, y1)} height={Math.max(1, Math.abs(y1 - y0))}
+                <rect key={p.t} x={i * slot + (slot - bw) / 2} width={bw} y={Math.min(y0, y1)} height={Math.max(1, Math.abs(y1 - y0))}
                   fill={i === series.length - 1 ? dotCol : p.v >= 0 ? "rgba(212,212,216,0.45)" : "rgba(212,212,216,0.28)"} />
               );
             })
@@ -92,7 +96,7 @@ export function Sparkline({
             <path d={series.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join("")} fill="none" stroke={lineCol} strokeOpacity={0.75} strokeWidth={1.4} />
           )}
           {!bars && <circle cx={x(series.length - 1)} cy={y(last.v)} r={3} fill={dotCol} />}
-          {hv && hover != null && <line x1={x(hover)} x2={x(hover)} y1={0} y2={H} stroke="rgba(255,255,255,0.25)" />}
+          {hv && hover != null && !bars && <line x1={x(hover)} x2={x(hover)} y1={0} y2={H} stroke="rgba(255,255,255,0.25)" />}
         </svg>
       )}
       {hv && (

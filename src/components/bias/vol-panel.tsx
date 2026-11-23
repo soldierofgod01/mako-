@@ -210,12 +210,13 @@ function VolCharts({ vol }: { vol: VolState }) {
         </ChartBox>
       )}
       {smile && (
-        <ChartBox title="Smile" sub={`IV by strike · ${fmtExp(smile.expiry)} expiry`} legend={[{ label: "Puts", color: PUT_C }, { label: "Calls", color: CALL_C }]}>
+        <ChartBox title="Smile" sub={`IV by strike · ${fmtExp(smile.expiry)} expiry`} legend={[{ label: "OTM puts", color: PUT_C }, { label: "OTM calls", color: CALL_C }]}>
           <XYChart
             height={200}
             series={[
-              { label: "Put IV", color: PUT_C, pts: smile.pts.filter((p) => p.put != null).map((p) => ({ x: p.strike, y: p.put! })) },
-              { label: "Call IV", color: CALL_C, pts: smile.pts.filter((p) => p.call != null).map((p) => ({ x: p.strike, y: p.call! })) },
+              // Out-of-the-money side only (puts below price, calls above) — the standard smile.
+              { label: "Put IV", color: PUT_C, pts: smile.pts.filter((p) => p.put != null && p.strike <= smile.fwd).map((p) => ({ x: p.strike, y: p.put! })) },
+              { label: "Call IV", color: CALL_C, pts: smile.pts.filter((p) => p.call != null && p.strike >= smile.fwd).map((p) => ({ x: p.strike, y: p.call! })) },
             ]}
             xFormat={fmtK}
             yFormat={(v) => v.toFixed(1)}
