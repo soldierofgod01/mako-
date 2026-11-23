@@ -14,7 +14,10 @@ export function LegalPage({ title, children }: { title: string; children: React.
             <img src="/mako-star.webp" alt="" width={34} height={34} />
             <span className="wordmark">MAKO</span>
           </Link>
-          <Link href="/#join" className="nav-cta">Join the waitlist</Link>
+          <div className="nav-right">
+            <a href="https://app.makoapp.xyz" className="nav-login">Log in</a>
+            <Link href="/#join" className="nav-cta">Join the waitlist</Link>
+          </div>
         </div>
       </header>
       <article className="legal">
