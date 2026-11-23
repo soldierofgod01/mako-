@@ -11,6 +11,7 @@ import { useAppStore } from "@/stores/app-store";
 import { cn } from "@/lib/utils";
 import { ChartBar, MagnifyingGlass, Pulse, Rows, type Icon as PhIcon } from "@phosphor-icons/react";
 import { CoinFinder } from "./coin-finder";
+import { UserButton } from "@clerk/nextjs";
 
 const modules = [
   { id: "screener", label: "Screener", icon: Rows },
@@ -86,8 +87,11 @@ export function SideNav() {
         ))}
       </nav>
 
-      {/* Footer: beta tag */}
-      <div className="mt-auto pb-1 text-[9px] font-medium uppercase tracking-[0.12em] text-txt-dim">beta</div>
+      {/* Footer: account + beta tag */}
+      <div className="mt-auto mb-3 h-8 flex items-center justify-center">
+        <UserButton appearance={{ elements: { avatarBox: "w-7 h-7" } }} />
+      </div>
+      <div className="pb-1 text-[9px] font-medium uppercase tracking-[0.12em] text-txt-dim">beta</div>
 
       <CoinFinder open={finder} onClose={() => setFinder(false)} />
     </aside>
