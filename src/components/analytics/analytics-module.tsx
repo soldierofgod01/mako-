@@ -149,19 +149,10 @@ export function AnalyticsModule() {
         </div>
       </div>
 
-      <div className="p-3 flex flex-col gap-3">
-        <SectionTitle title="Now" sub="Where this coin stands today vs its own history" />
-        <NowTabs
-          render={(id) =>
-            id === "pulse" ? <PulsePanel vol={vol} coin={biasCoin} oiUsd={ctxData?.ctx.oiUsd ?? null} />
-              : id === "vol" ? <VolPanel vol={vol} px={px} />
-              : <CostBasisPanel px={px} cohorts={cohorts && cohorts.coin === biasCoin ? cohorts : null} />
-          }
-        />
-        <SectionTitle title="History" sub={range === "1W" ? "Last 7 days" : "Last 30 days"} />
+      <div className="p-3 pb-0 flex flex-col gap-3">
+        <SectionTitle title="Market overview" sub={range === "1W" ? "Last 7 days" : "Last 30 days"} />
       </div>
-
-      <div className="px-3 pb-3">
+      <div className="px-3 pt-3">
         {isError ? (
           <div className="py-24 text-center text-[13px] text-txt-muted">Couldn&rsquo;t load analytics for {biasCoin}. Retrying…</div>
         ) : isLoading || !data || !S ? (
@@ -204,6 +195,16 @@ export function AnalyticsModule() {
             </div>
           </div>
         )}
+      </div>
+      <div className="p-3 flex flex-col gap-3">
+        <SectionTitle title="Right now" sub="Where this coin stands today vs its own history" />
+        <NowTabs
+          render={(id) =>
+            id === "pulse" ? <PulsePanel vol={vol} coin={biasCoin} oiUsd={ctxData?.ctx.oiUsd ?? null} />
+              : id === "vol" ? <VolPanel vol={vol} px={px} />
+              : <CostBasisPanel px={px} cohorts={cohorts && cohorts.coin === biasCoin ? cohorts : null} />
+          }
+        />
         <p className="px-1 pt-4 pb-6 text-[11.5px] text-txt-muted max-w-[900px] leading-[1.55]">
           Hyperliquid data only — no cross-exchange aggregation. Price, volume, funding and returns come straight from Hyperliquid. Open
           interest and sharps-vs-donors come from Mako&rsquo;s own recordings, so they start short and grow. Average returns are historical
