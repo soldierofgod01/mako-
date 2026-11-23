@@ -13,7 +13,6 @@ import {
   type Trade,
   whaleThreshold,
 } from "@/lib/bias/engine";
-import { tickLog, logStats, type LogStats } from "@/lib/bias/log";
 import type { CoinCohorts } from "@/lib/cohorts/cohorts";
 import { restore, saveMemory, saveStorage, type CvdPoint, type TapeState } from "@/lib/bias/persist";
 import { candleDelta } from "@/lib/bias/chart-math";
@@ -124,7 +123,6 @@ export interface OrderflowState {
   whaleMin: number;
   book: { bids: BookLevel[]; asks: BookLevel[]; bandPct: number } | null;
   tradeCount: number;
-  logStats: LogStats | null;
   ctxError: boolean;
   cohorts: CohortsResponse | null;
   mtf: { "5m": BiasResult; "15m": BiasResult; "1h": BiasResult } | null;
@@ -170,7 +168,6 @@ const EMPTY: OrderflowState = {
   whaleMin: 25_000,
   book: null,
   tradeCount: 0,
-  logStats: null,
   ctxError: false,
   cohorts: null,
   mtf: null,
@@ -805,12 +802,6 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
         const lastPx = trades.length ? trades[trades.length - 1].px : ctx?.markPx ?? null;
         const whaleMin = whaleThreshold(vol);
 
-        let stats: LogStats | null = null;
-        if (!bias.warmingUp && bias.source !== "recorder" && lastPx && typeof window !== "undefined") {
-          const log = tickLog(coinRef.current, bias.score, lastPx, now);
-          stats = logStats(log, coinRef.current);
-        }
-
         setState({
           status: statusRef.current,
           bias,
@@ -834,7 +825,6 @@ export function useOrderflow(coin: string, chartInterval: ChartInterval = "15m")
           whaleMin,
           book: lastBookRef.current,
           tradeCount: trades.length,
-          logStats: stats,
           ctxError: ctxErrorRef.current,
           cohorts: cohortRef.current,
           mtf,

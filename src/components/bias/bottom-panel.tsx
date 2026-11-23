@@ -15,7 +15,7 @@ import { CostBasisPanel, PulsePanel } from "./pulse-panel";
 // positions/orders strip. Drag the top edge to resize; collapse to a bar.
 // ════════════════════════════════════════════════════════════════
 
-type TabId = "pulse" | "basis" | "vol" | "cohorts" | "liqs" | "prints" | "log";
+type TabId = "pulse" | "basis" | "vol" | "cohorts" | "liqs" | "prints";
 const TABS: { id: TabId; label: string }[] = [
   { id: "pulse", label: "Market pulse" },
   { id: "basis", label: "Trader cost basis" },
@@ -23,7 +23,6 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "cohorts", label: "Sharps vs donors" },
   { id: "liqs", label: "Liquidation levels" },
   { id: "prints", label: "Large prints" },
-  { id: "log", label: "Bias log" },
 ];
 const MIN_H = 140;
 const MAX_H = 460;
@@ -101,7 +100,6 @@ export function BottomPanel({ of, vol, coin }: { of: OrderflowState; vol: VolSta
           {tab === "cohorts" && <Cohorts of={of} />}
           {tab === "liqs" && <Liqs of={of} />}
           {tab === "prints" && <Prints of={of} />}
-          {tab === "log" && <BiasLog of={of} />}
         </div>
       )}
     </section>
@@ -231,27 +229,6 @@ function Prints({ of }: { of: OrderflowState }) {
           <span className="text-right text-txt-muted">{new Date(t.t).toLocaleTimeString([], { hour12: false })}</span>
         </div>
       ))}
-    </div>
-  );
-}
-
-// ─── Bias log (this browser) ────────────────────────────────────
-
-function BiasLog({ of }: { of: OrderflowState }) {
-  const s = of.logStats;
-  return (
-    <div className="px-4 py-3 flex items-start gap-6">
-      <div className="w-[180px] shrink-0">
-        <div className="text-[11.5px] text-txt-muted">Hit rate · this browser</div>
-        <div className="ds-num text-[22px] font-semibold text-txt-primary leading-tight">
-          {s?.hitRate != null ? `${Math.round(s.hitRate * 100)}%` : "—"}
-        </div>
-      </div>
-      <Note>
-        {s && s.graded > 0
-          ? `${s.hits}/${s.graded} directional reads on this coin were right 15 min later${s.graded < 30 ? " — too few to trust yet" : ""}. ${s.pending} pending.`
-          : "Logs the bias every 5 min and checks price 15 min later. Needs 30+ graded reads before the number means anything."}
-      </Note>
     </div>
   );
 }
