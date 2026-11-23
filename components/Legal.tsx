@@ -3,6 +3,7 @@ import Link from "next/link"
 // Shared shell for the legal pages: same nav and footer as the home page, a narrow reading column.
 
 export const CONTACT_EMAIL = "[contact email]"
+export const GRIEVANCE_OFFICER = "[name]"
 export const UPDATED = "24 November 2026"
 
 export function LegalPage({ title, children }: { title: string; children: React.ReactNode }) {
@@ -39,8 +40,6 @@ export function LegalFooter() {
         <nav className="foot-links" aria-label="Legal">
           <Link href="/privacy">Privacy</Link>
           <Link href="/terms">Terms</Link>
-          <Link href="/cookies">Cookies</Link>
-          <Link href="/risk">Risk</Link>
         </nav>
         <span>© {new Date().getFullYear()} Mako</span>
       </div>

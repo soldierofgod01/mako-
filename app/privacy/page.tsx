@@ -1,99 +1,59 @@
 import type { Metadata } from "next"
-import { CONTACT_EMAIL, LegalPage } from "@/components/Legal"
+import { CONTACT_EMAIL, GRIEVANCE_OFFICER, LegalPage } from "@/components/Legal"
 
 export const metadata: Metadata = { title: "Privacy Policy · Mako" }
 
 export default function Privacy() {
   return (
     <LegalPage title="Privacy Policy">
-      <p>
-        This policy explains what personal data Mako collects through makoapp.xyz and the Mako app (together, “Mako”), why, and what you
-        can do about it. Mako is operated from India. Where this policy says “we” or “us”, it means the operator of Mako.
-      </p>
+      <p>This policy explains what personal data Mako (makoapp.xyz and the Mako app) collects, why, and what you can do about it.</p>
 
-      <h2>The short version</h2>
+      <h2>What we collect and why</h2>
       <ul>
-        <li>The only personal data we ask for is your email address, if you join the waitlist.</li>
-        <li>Mako has no accounts, no advertising and no analytics or tracking tools.</li>
-        <li>We don’t sell or rent your data, and we don’t share it for marketing.</li>
-      </ul>
-
-      <h2>What we collect</h2>
-      <h3>Your email address (waitlist)</h3>
-      <p>
-        When you join the waitlist we store your email address, the time you signed up and where you signed up from (for example, “landing”).
-        We use it only to tell you when Mako opens and to send occasional updates about Mako. Every email we send will tell you how to stop
-        receiving them.
-      </p>
-      <h3>Technical data</h3>
-      <p>
-        Like any website, our hosting provider receives your IP address, browser type and the pages you request when you visit. This is used
-        to deliver the site, keep it secure and fix problems, and is kept in short-lived server logs. We don’t use it to identify you.
-      </p>
-      <h3>Settings stored on your device</h3>
-      <p>
-        The Mako app remembers your choices (such as chart timeframe, indicators and favourite markets) in your browser’s local storage. This
-        stays on your device and is never sent to us. See our <a href="/cookies">Cookie Policy</a>.
-      </p>
-      <h3>Public market data</h3>
-      <p>
-        Mako analyses public Hyperliquid market data, including activity of public wallet addresses, to produce aggregate statistics. We
-        don’t link this data to you or to any named person.
-      </p>
-
-      <h2>Why we’re allowed to use it</h2>
-      <p>
-        We process your email address because you gave it to us to join the waitlist (your consent). You can withdraw that consent at any
-        time, and we’ll delete your address. Technical data is processed because it’s needed to run and secure the site.
-      </p>
-
-      <h2>Who we share it with</h2>
-      <p>We use a small number of service providers who process data on our behalf:</p>
-      <ul>
-        <li>a <strong>hosting provider</strong>, which runs the website and app (and sees the technical data described above);</li>
-        <li>a <strong>database provider</strong>, which stores the waitlist on servers in Singapore.</li>
+        <li>
+          <strong>Your email address</strong>, if you join the waitlist, along with when and where on the site you signed up. We use it
+          only to tell you when Mako opens and to send occasional updates about Mako. Every email includes a way to unsubscribe.
+        </li>
+        <li>
+          <strong>Basic technical data</strong> (IP address, browser type, pages requested), which our hosting provider receives whenever
+          you visit. It’s used only to run and secure the site, and is kept briefly in server logs.
+        </li>
       </ul>
       <p>
-        When you use the Mako app, your browser also loads market data and images directly from third parties, which therefore see your IP
-        address: Hyperliquid (market data and coin icons), Deribit (options data), CoinGecko (market data), jsDelivr (coin icons) and Google
-        Fonts (typefaces). Their own privacy policies apply to those requests.
+        Mako has no accounts, no advertising and no analytics or tracking. We don’t use cookies. The app saves your settings (such as chart
+        timeframe and favourite markets) in your own browser; that data never leaves your device.
       </p>
-      <p>We may also disclose data if the law requires it.</p>
 
-      <h2>International transfers</h2>
+      <h2>Who holds it</h2>
       <p>
-        Our providers may process data outside India, including in Singapore and the United States. We only use providers that protect data
-        to a standard consistent with this policy.
+        Your data is held by the hosting and database providers we use to run Mako, on servers outside India, including in Singapore. We
+        don’t sell or rent your data, or share it for marketing. We’ll only disclose it if the law requires us to.
       </p>
 
       <h2>How long we keep it</h2>
-      <p>
-        We keep your email address until Mako launches and for as long as you stay subscribed to updates. If you ask us to delete it, or
-        unsubscribe, we delete it. Server logs are kept only briefly by our hosting provider.
-      </p>
+      <p>We keep your email address until you unsubscribe or ask us to delete it.</p>
 
       <h2>Your rights</h2>
       <p>
-        You can ask us to tell you what personal data we hold about you, correct it, or delete it, and you can withdraw your consent at any
-        time. You can also nominate someone to exercise these rights on your behalf. To do any of this, or to raise a complaint, email{" "}
-        <strong>{CONTACT_EMAIL}</strong>. We aim to reply within 30 days. If you’re unhappy with our answer, you may complain to the Data
-        Protection Board of India or your local data protection authority.
+        You can ask to see the personal data we hold about you, correct it or delete it, and you can withdraw your consent at any time by
+        unsubscribing or emailing us. You can also nominate someone to exercise these rights for you. If you’re not satisfied with our
+        response, you can complain to the Data Protection Board of India.
       </p>
 
       <h2>Security</h2>
-      <p>
-        We take reasonable steps to protect your data: the waitlist can only be added to from the website, never read from it, and access to
-        it is restricted. No system is perfectly secure, and if a breach affects your data we will tell you as the law requires.
-      </p>
+      <p>We take reasonable steps to protect your data, including restricting who can access it. If a breach affects your data, we’ll tell you as the law requires.</p>
 
-      <h2>Children</h2>
-      <p>Mako is for adults. We don’t knowingly collect data from anyone under 18. If you believe a child has joined the waitlist, contact us and we’ll delete it.</p>
+      <h2>Age</h2>
+      <p>Mako is for people aged 18 and over. We don’t knowingly collect data from anyone younger.</p>
 
       <h2>Changes</h2>
-      <p>If we change this policy we’ll update the date above, and we’ll email the waitlist about any important change before it takes effect.</p>
+      <p>If we change this policy, we’ll update the date above and email the waitlist about any important change.</p>
 
-      <h2>Contact</h2>
-      <p>Questions or requests: <strong>{CONTACT_EMAIL}</strong>.</p>
+      <h2>Grievance Officer</h2>
+      <p>
+        For any question, request or complaint about your data, contact our Grievance Officer, {GRIEVANCE_OFFICER}, at{" "}
+        <strong>{CONTACT_EMAIL}</strong>. We’ll respond within one month.
+      </p>
     </LegalPage>
   )
 }
