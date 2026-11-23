@@ -4,7 +4,7 @@ import { AuthFrame } from "@/components/auth/auth-frame";
 export default function SignInPage() {
   return (
     <AuthFrame>
-      <SignIn />
+      <SignIn withSignUp />
     </AuthFrame>
   );
 }
