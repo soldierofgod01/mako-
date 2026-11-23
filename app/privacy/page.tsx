@@ -50,8 +50,8 @@ export default function Privacy() {
       <h2>Who we share it with</h2>
       <p>We use a small number of service providers who process data on our behalf:</p>
       <ul>
-        <li><strong>Vercel</strong> hosts the website and app (and sees the technical data described above).</li>
-        <li><strong>Supabase</strong> stores the waitlist, on servers in Singapore.</li>
+        <li>a <strong>hosting provider</strong>, which runs the website and app (and sees the technical data described above);</li>
+        <li>a <strong>database provider</strong>, which stores the waitlist on servers in Singapore.</li>
       </ul>
       <p>
         When you use the Mako app, your browser also loads market data and images directly from third parties, which therefore see your IP
