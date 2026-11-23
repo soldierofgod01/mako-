@@ -35,6 +35,10 @@ function GoogleMark() {
   );
 }
 
+// Google sign-in stays hidden until the privacy policy is live (Google
+// requires it to publish the OAuth app). Turn on with NEXT_PUBLIC_AUTH_GOOGLE=1.
+const GOOGLE_ON = process.env.NEXT_PUBLIC_AUTH_GOOGLE === "1";
+
 const pill =
   "h-10 w-full rounded-full text-[13px] font-medium inline-flex items-center justify-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
 
@@ -167,18 +171,24 @@ export function AuthCard() {
       ) : step === "email" ? (
         <>
           <h1 className="text-center text-[17px] font-semibold text-txt-primary tracking-[-0.01em]">Sign in to Mako</h1>
-          <p className="text-center text-[13px] text-txt-secondary mt-1.5 mb-6">Use Google or get a code by email.</p>
+          <p className="text-center text-[13px] text-txt-secondary mt-1.5 mb-6">
+            {GOOGLE_ON ? "Use Google or get a code by email." : "We\u2019ll email you a 6-digit code."}
+          </p>
 
-          <button type="button" onClick={google} disabled={!ready || !!busy} className={`${pill} bg-white text-black hover:bg-white/90`}>
-            <GoogleMark />
-            {busy === "google" ? "Redirecting…" : "Continue with Google"}
-          </button>
+          {GOOGLE_ON && (
+            <>
+              <button type="button" onClick={google} disabled={!ready || !!busy} className={`${pill} bg-white text-black hover:bg-white/90`}>
+                <GoogleMark />
+                {busy === "google" ? "Redirecting…" : "Continue with Google"}
+              </button>
 
-          <div className="flex items-center gap-3 my-5">
-            <span className="h-px flex-1 bg-white/[0.07]" />
-            <span className="text-[11px] text-txt-muted">or</span>
-            <span className="h-px flex-1 bg-white/[0.07]" />
-          </div>
+              <div className="flex items-center gap-3 my-5">
+                <span className="h-px flex-1 bg-white/[0.07]" />
+                <span className="text-[11px] text-txt-muted">or</span>
+                <span className="h-px flex-1 bg-white/[0.07]" />
+              </div>
+            </>
+          )}
 
           <form onSubmit={sendCode} className="flex flex-col gap-2.5">
             <input
@@ -190,7 +200,7 @@ export function AuthCard() {
               onChange={(e) => setEmail(e.target.value)}
               className="h-10 w-full rounded-full bg-white/[0.04] ring-1 ring-inset ring-white/[0.08] px-4 text-[13px] text-txt-primary placeholder:text-txt-muted outline-none focus:ring-white/[0.22] transition-shadow"
             />
-            <button type="submit" disabled={!ready || !!busy || !email.trim()} className={`${pill} bg-white/[0.07] ring-1 ring-inset ring-white/[0.08] text-txt-primary hover:bg-white/[0.1]`}>
+            <button type="submit" disabled={!ready || !!busy || !email.trim()} className={`${pill} ${GOOGLE_ON ? "bg-white/[0.07] ring-1 ring-inset ring-white/[0.08] text-txt-primary hover:bg-white/[0.1]" : "bg-white text-black hover:bg-white/90"}`}>
               {busy === "email" ? "Sending code…" : "Continue with email"}
             </button>
           </form>
