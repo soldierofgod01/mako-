@@ -1,7 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CaretDown } from "@phosphor-icons/react";
 import { useAppStore } from "@/stores/app-store";
 import { CoinPicker, fmtPrice } from "@/components/bias/bias-module";
 import { BarChart, Panel, Stat, TimeChart, type SeriesSpec } from "./charts";
@@ -33,6 +32,14 @@ interface Ctx {
 }
 
 const RANGES = { "1W": 7, "1M": 30 } as const;
+
+type ViewId = "overview" | "pulse" | "vol" | "basis";
+const VIEWS: { id: ViewId; label: string }[] = [
+  { id: "overview", label: "Overview" },
+  { id: "pulse", label: "Market pulse" },
+  { id: "vol", label: "Volatility" },
+  { id: "basis", label: "Cost basis" },
+];
 type Range = keyof typeof RANGES;
 
 const usd = (x: number) => {
@@ -54,6 +61,14 @@ const C = { mint: "#33FFA3", blue: "#4C8DFF", violet: "#B26BFF", amber: "#F5B83D
 export function AnalyticsModule() {
   const { biasCoin, setBiasCoin } = useAppStore();
   const [range, setRange] = useState<Range>("1W");
+  const [view, setView] = useState<ViewId>("overview");
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem("mako:analytics:view") as ViewId | null;
+      if (v && VIEWS.some((x) => x.id === v)) setView(v);
+    } catch { /* ignore */ }
+  }, []);
+  const pickView = (v: ViewId) => { setView(v); try { localStorage.setItem("mako:analytics:view", v); } catch { /* ignore */ } };
   useEffect(() => {
     try {
       const saved = localStorage.getItem("mako:bias:coin");
@@ -131,14 +146,25 @@ export function AnalyticsModule() {
       <div className="sticky top-0 z-20 bg-bg-base/95 backdrop-blur border-b border-border">
         <div className="h-14 px-4 flex items-center gap-4">
           <CoinPicker coin={biasCoin} onPick={setBiasCoin} />
-          <div className="flex items-center rounded-md border border-border p-0.5">
+          <div className="flex items-center gap-1">
+            {VIEWS.map((v) => (
+              <button
+                key={v.id}
+                onClick={() => pickView(v.id)}
+                className={cn("h-7 px-3 rounded-full text-[13px] font-medium transition-colors", view === v.id ? "bg-elevated-2 text-txt-primary" : "text-txt-secondary hover:text-txt-primary")}
+              >
+                {v.label}
+              </button>
+            ))}
+          </div>
+          {view === "overview" && <div className="flex items-center rounded-md border border-border p-0.5">
             {(Object.keys(RANGES) as Range[]).map((r) => (
               <button key={r} onClick={() => setRange(r)} className={cn("h-6 px-2.5 rounded text-[12px] font-medium", range === r ? "bg-elevated text-txt-primary" : "text-txt-muted hover:text-txt-primary")}>
                 {r}
               </button>
             ))}
-          </div>
-          <div className="ml-auto flex items-center gap-8">
+          </div>}
+          <div className="ml-auto hidden xl:flex items-center gap-6">
             <Stat label="Price" value={ctx ? fmtPrice(ctx.markPx) : "—"} />
             <Stat label="24h" value={ctx ? fmtPct2(ctx.change24hPct) : "—"} tone={ctx ? (ctx.change24hPct >= 0 ? "pos" : "neg") : undefined} />
             <Stat label="Open interest" value={ctx ? usd(ctx.oiUsd) : "—"} />
@@ -149,9 +175,8 @@ export function AnalyticsModule() {
         </div>
       </div>
 
-      <div className="p-3 pb-0 flex flex-col gap-3">
-        <SectionTitle title="Market overview" sub={range === "1W" ? "Last 7 days" : "Last 30 days"} />
-      </div>
+      {view === "overview" && (
+        <>
       <div className="px-3 pt-3">
         {isError ? (
           <div className="py-24 text-center text-[13px] text-txt-muted">Couldn&rsquo;t load analytics for {biasCoin}. Retrying…</div>
@@ -196,79 +221,20 @@ export function AnalyticsModule() {
           </div>
         )}
       </div>
-      <div className="p-3 flex flex-col gap-3">
-        <SectionTitle title="Right now" sub="Where this coin stands today vs its own history" />
-        <NowTabs
-          render={(id) =>
-            id === "pulse" ? <PulsePanel vol={vol} coin={biasCoin} oiUsd={ctxData?.ctx.oiUsd ?? null} />
-              : id === "vol" ? <VolPanel vol={vol} px={px} />
-              : <CostBasisPanel px={px} cohorts={cohorts && cohorts.coin === biasCoin ? cohorts : null} />
-          }
-        />
+          <div className="px-3">
         <p className="px-1 pt-4 pb-6 text-[11.5px] text-txt-muted max-w-[900px] leading-[1.55]">
           Hyperliquid data only — no cross-exchange aggregation. Price, volume, funding and returns come straight from Hyperliquid. Open
           interest and sharps-vs-donors come from Mako&rsquo;s own recordings, so they start short and grow. Average returns are historical
           tendencies over a small sample, not forecasts.
         </p>
-      </div>
+          </div>
+        </>
+      )}
+      {view === "pulse" && <PulsePanel vol={vol} coin={biasCoin} oiUsd={ctxData?.ctx.oiUsd ?? null} />}
+      {view === "vol" && <VolPanel vol={vol} px={px} />}
+      {view === "basis" && <CostBasisPanel px={px} cohorts={cohorts && cohorts.coin === biasCoin ? cohorts : null} />}
     </div>
   );
 }
 
-function SectionTitle({ title, sub }: { title: string; sub?: string }) {
-  return (
-    <div className="flex items-baseline gap-3 px-1 pt-1">
-      <h2 className="text-[16px] font-semibold text-txt-primary tracking-[-0.01em]">{title}</h2>
-      {sub && <span className="text-[12.5px] text-txt-muted">{sub}</span>}
-    </div>
-  );
-}
 
-type NowId = "pulse" | "vol" | "basis";
-const NOW_TABS: { id: NowId; label: string; sub: string }[] = [
-  { id: "pulse", label: "Market pulse", sub: "Each reading vs this coin's own history" },
-  { id: "vol", label: "Volatility", sub: "Implied vs realised, skew, gamma" },
-  { id: "basis", label: "Trader cost basis", sub: "Where tracked Hyperliquid wallets entered" },
-];
-
-/** One "Now" view at a time: pill tabs + collapse, like the Terminal's bottom panel. */
-function NowTabs({ render }: { render: (id: NowId) => React.ReactNode }) {
-  const [tab, setTab] = useState<NowId>("pulse");
-  const [open, setOpen] = useState(true);
-  useEffect(() => {
-    try {
-      const t = localStorage.getItem("mako:analytics:now") as NowId | null;
-      if (t && NOW_TABS.some((x) => x.id === t)) setTab(t);
-      if (localStorage.getItem("mako:analytics:now-open") === "0") setOpen(false);
-    } catch { /* ignore */ }
-  }, []);
-  const save = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* ignore */ } };
-  const cur = NOW_TABS.find((t) => t.id === tab)!;
-  return (
-    <section className="rounded-lg border border-border bg-[#0C0C0F] min-w-0 overflow-hidden">
-      <div className="h-12 px-2 flex items-center gap-1 border-b border-border">
-        {NOW_TABS.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => { setTab(t.id); save("mako:analytics:now", t.id); if (!open) { setOpen(true); save("mako:analytics:now-open", "1"); } }}
-            className={cn(
-              "h-8 px-3.5 rounded-full text-[13px] font-medium transition-colors",
-              tab === t.id && open ? "bg-elevated-2 text-txt-primary" : "text-txt-secondary hover:text-txt-primary"
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
-        <span className="hidden lg:block ml-3 text-[12px] text-txt-muted">{cur.sub}</span>
-        <button
-          onClick={() => setOpen((v) => { save("mako:analytics:now-open", v ? "0" : "1"); return !v; })}
-          title={open ? "Collapse" : "Expand"}
-          className="ml-auto w-8 h-8 rounded-full flex items-center justify-center text-txt-muted hover:text-txt-primary hover:bg-elevated"
-        >
-          <CaretDown size={15} className={cn("transition-transform", !open && "-rotate-90")} />
-        </button>
-      </div>
-      {open && render(tab)}
-    </section>
-  );
-}

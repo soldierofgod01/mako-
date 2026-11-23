@@ -128,7 +128,7 @@ export function VolPanel({ vol, px }: { vol: VolState; px: number | null }) {
         <CoverageLine vol={vol} />
         <div className="grid grid-cols-2 xl:grid-cols-4 gap-2">
           {tiles.map((t) => (
-            <div key={t.label} className="rounded-[10px] bg-void border border-border px-3 py-2.5">
+            <div key={t.label} className="rounded-lg border border-border bg-[#0C0C0F] px-3 py-2.5">
               <div className="flex items-baseline justify-between gap-2">
                 <span className="text-[12px] text-txt-secondary truncate">{t.label}</span>
                 <span className={cn("ds-num text-[17px] font-semibold whitespace-nowrap",
@@ -155,7 +155,7 @@ const IV_C = "#B26BFF", RV_C = "#4C8DFF", CALL_C = "#2BD4D9", PUT_C = "#F0643C";
 
 function ChartBox({ title, sub, legend, children }: { title: string; sub?: string; legend?: { label: string; color: string; dashed?: boolean }[]; children: React.ReactNode }) {
   return (
-    <div className="rounded-[10px] bg-void border border-border px-3 pt-2.5 pb-2 min-w-0 flex flex-col">
+    <div className="rounded-lg border border-border bg-[#0C0C0F] px-3 pt-2.5 pb-2 min-w-0 flex flex-col">
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-[13px] font-semibold text-txt-primary">{title}</span>
         {sub && <span className="text-[12px] text-txt-muted truncate">{sub}</span>}
@@ -254,7 +254,7 @@ function GexBars({ vol, spot }: { vol: VolState; spot: number }) {
   const max = Math.max(...rows.map((r) => r.abs), 1);
   const spotIdx = rows.findIndex((r) => r.strike < spot);
   return (
-    <div className="w-[260px] shrink-0 rounded-[10px] bg-void border border-border px-3 py-2.5 flex flex-col">
+    <div className="w-[260px] shrink-0 rounded-lg border border-border bg-[#0C0C0F] px-3 py-2.5 flex flex-col">
       <div className="flex items-baseline justify-between">
         <span className="text-[12px] text-txt-secondary">Gamma by strike · ±10%</span>
         <span className="text-[12px] text-txt-muted">$ per 1%</span>

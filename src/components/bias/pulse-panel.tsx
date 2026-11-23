@@ -104,7 +104,7 @@ const fmtFor = (id: string) => (v: number) =>
 
 function MetricCard({ m, chart }: { m: PulseMetric; chart?: boolean }) {
   return (
-    <div className="rounded-[10px] bg-void border border-border px-3 py-2.5">
+    <div className="rounded-lg border border-border bg-[#0C0C0F] px-3 py-2.5">
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-[12px] text-txt-secondary truncate">{m.label}</span>
         <span className="ds-num text-[17px] font-semibold text-txt-primary whitespace-nowrap">{m.display}</span>
@@ -169,7 +169,7 @@ export function CostBasisPanel({ px, cohorts }: { px: number | null; cohorts: Co
   if (!view || !px) return <div className="px-4 py-3 text-[13px] text-txt-secondary">No tracked wallets hold this coin right now.</div>;
 
   const SideCard = ({ label, s, long }: { label: string; s: typeof view.longs; long: boolean }) => (
-    <div className="rounded-[10px] bg-void border border-border px-3 py-2.5">
+    <div className="rounded-lg border border-border bg-[#0C0C0F] px-3 py-2.5">
       <div className="flex items-baseline justify-between">
         <span className={cn("text-[13px] font-medium", long ? "text-positive" : "text-negative")}>{label}</span>
         <span className="ds-num text-[12px] text-txt-secondary">{s.n} positions · {usdShort(s.usd)}</span>
@@ -212,7 +212,7 @@ export function CostBasisPanel({ px, cohorts }: { px: number | null; cohorts: Co
           A sample of the market, not all of it: Hyperliquid positions are public, so this is real entries, not an estimate.
         </p>
       </div>
-      <div className="rounded-[10px] bg-void border border-border px-3 pt-2.5 pb-2">
+      <div className="rounded-lg border border-border bg-[#0C0C0F] px-3 pt-2.5 pb-2">
         <div className="flex items-baseline justify-between">
           <span className="text-[13px] font-semibold text-txt-primary">Entry map</span>
           <span className="text-[12px] text-txt-muted">
