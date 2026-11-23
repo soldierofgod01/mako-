@@ -50,7 +50,7 @@ export default function Home() {
           {" "}<br />
           read for you
         </h2>
-        <p className="sub sub-sm">Majors, memes and the newest listings. Open any coin and see whether its range is likely to break, where funding is leaning and how the crowd is positioned.</p>
+        <p className="sub sub-sm">Majors, memes and the newest listings. Open any coin and see who’s in control, where funding is leaning and how the crowd is positioned.</p>
         <CoinWall />
       </section>
 
