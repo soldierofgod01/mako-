@@ -277,9 +277,10 @@ void main() {
 `
 
 const UNIFORMS = {
-  // Mako dark: electric-blue wave at the bottom fading into near-black
-  colors: [[0.04,0.24,1.0],[0.02,0.06,0.22],[0.012,0.012,0.018],[0.008,0.008,0.01],[0,0,0],[0,0,0],[0,0,0],[0,0,0]] as [number, number, number][],
-  colorCount: 4,
+  // Mako dark: the landing-page dome indigo (#4D2FF9 → #5667FF), dimmed, rising
+  // from the bottom into near-black
+  colors: [[0.19,0.13,0.62],[0.09,0.07,0.33],[0.03,0.025,0.10],[0.012,0.012,0.02],[0.008,0.008,0.01],[0,0,0],[0,0,0],[0,0,0]] as [number, number, number][],
+  colorCount: 5,
   scale: 1.320,
   intensity: 0.490,
   paramA: 0.840,
