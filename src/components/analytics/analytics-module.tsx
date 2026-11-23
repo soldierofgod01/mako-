@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { CaretDown } from "@phosphor-icons/react";
 import { useAppStore } from "@/stores/app-store";
 import { CoinPicker, fmtPrice } from "@/components/bias/bias-module";
 import { BarChart, Panel, Stat, TimeChart, type SeriesSpec } from "./charts";
@@ -150,15 +151,13 @@ export function AnalyticsModule() {
 
       <div className="p-3 flex flex-col gap-3">
         <SectionTitle title="Now" sub="Where this coin stands today vs its own history" />
-        <NowCard title="Market pulse">
-          <PulsePanel vol={vol} coin={biasCoin} oiUsd={ctxData?.ctx.oiUsd ?? null} />
-        </NowCard>
-        <NowCard title="Volatility">
-          <VolPanel vol={vol} px={px} />
-        </NowCard>
-        <NowCard title="Trader cost basis" sub="Where tracked Hyperliquid wallets entered">
-          <CostBasisPanel px={px} cohorts={cohorts && cohorts.coin === biasCoin ? cohorts : null} />
-        </NowCard>
+        <NowTabs
+          render={(id) =>
+            id === "pulse" ? <PulsePanel vol={vol} coin={biasCoin} oiUsd={ctxData?.ctx.oiUsd ?? null} />
+              : id === "vol" ? <VolPanel vol={vol} px={px} />
+              : <CostBasisPanel px={px} cohorts={cohorts && cohorts.coin === biasCoin ? cohorts : null} />
+          }
+        />
         <SectionTitle title="History" sub={range === "1W" ? "Last 7 days" : "Last 30 days"} />
       </div>
 
@@ -224,14 +223,51 @@ function SectionTitle({ title, sub }: { title: string; sub?: string }) {
   );
 }
 
-function NowCard({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
+type NowId = "pulse" | "vol" | "basis";
+const NOW_TABS: { id: NowId; label: string; sub: string }[] = [
+  { id: "pulse", label: "Market pulse", sub: "Each reading vs this coin's own history" },
+  { id: "vol", label: "Volatility", sub: "Implied vs realised, skew, gamma" },
+  { id: "basis", label: "Trader cost basis", sub: "Where tracked Hyperliquid wallets entered" },
+];
+
+/** One "Now" view at a time: pill tabs + collapse, like the Terminal's bottom panel. */
+function NowTabs({ render }: { render: (id: NowId) => React.ReactNode }) {
+  const [tab, setTab] = useState<NowId>("pulse");
+  const [open, setOpen] = useState(true);
+  useEffect(() => {
+    try {
+      const t = localStorage.getItem("mako:analytics:now") as NowId | null;
+      if (t && NOW_TABS.some((x) => x.id === t)) setTab(t);
+      if (localStorage.getItem("mako:analytics:now-open") === "0") setOpen(false);
+    } catch { /* ignore */ }
+  }, []);
+  const save = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* ignore */ } };
+  const cur = NOW_TABS.find((t) => t.id === tab)!;
   return (
     <section className="rounded-lg border border-border bg-[#0C0C0F] min-w-0 overflow-hidden">
-      <div className="h-11 px-4 flex items-center gap-3 border-b border-border">
-        <h3 className="text-[14px] font-semibold text-txt-primary tracking-[-0.01em]">{title}</h3>
-        {sub && <span className="text-[12px] text-txt-muted">{sub}</span>}
+      <div className="h-12 px-2 flex items-center gap-1 border-b border-border">
+        {NOW_TABS.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => { setTab(t.id); save("mako:analytics:now", t.id); if (!open) { setOpen(true); save("mako:analytics:now-open", "1"); } }}
+            className={cn(
+              "h-8 px-3.5 rounded-full text-[13px] font-medium transition-colors",
+              tab === t.id && open ? "bg-elevated-2 text-txt-primary" : "text-txt-secondary hover:text-txt-primary"
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+        <span className="hidden lg:block ml-3 text-[12px] text-txt-muted">{cur.sub}</span>
+        <button
+          onClick={() => setOpen((v) => { save("mako:analytics:now-open", v ? "0" : "1"); return !v; })}
+          title={open ? "Collapse" : "Expand"}
+          className="ml-auto w-8 h-8 rounded-full flex items-center justify-center text-txt-muted hover:text-txt-primary hover:bg-elevated"
+        >
+          <CaretDown size={15} className={cn("transition-transform", !open && "-rotate-90")} />
+        </button>
       </div>
-      {children}
+      {open && render(tab)}
     </section>
   );
 }
