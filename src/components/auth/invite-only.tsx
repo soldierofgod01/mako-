@@ -1,10 +1,11 @@
 "use client";
 import { SignOutButton } from "@clerk/nextjs";
+import { AuthFrame } from "./auth-frame";
 
 // Shown to signed-in users who haven't been approved for the beta.
 export function InviteOnly({ email }: { email?: string }) {
   return (
-    <div className="h-screen w-screen flex items-center justify-center bg-void px-6">
+    <AuthFrame>
       <div className="ds-card-panel w-full max-w-[400px] px-8 py-9 text-center">
         {/* eslint-disable-next-line @next/next/no-img-element -- tiny static logo */}
         <img src="/mako-star.png" alt="Mako" width={36} height={36} className="w-9 h-9 mx-auto mb-5 object-contain" />
@@ -27,6 +28,6 @@ export function InviteOnly({ email }: { email?: string }) {
           </SignOutButton>
         </div>
       </div>
-    </div>
+    </AuthFrame>
   );
 }
