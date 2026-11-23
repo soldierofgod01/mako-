@@ -18,23 +18,8 @@ export default function RootLayout({
   return (
     <ClerkProvider
       signInUrl="/sign-in"
-      signUpUrl="/sign-up"
+      signUpUrl="/sign-in"
       afterSignOutUrl="/sign-in"
-      appearance={{
-        variables: {
-          colorPrimary: "#EDEDEF",
-          colorPrimaryForeground: "#070709",
-          colorBackground: "#0B0B0E",
-          colorForeground: "#EDEDEF",
-          colorMutedForeground: "#9B9BA0",
-          colorInput: "#0F0F13",
-          colorInputForeground: "#EDEDEF",
-          colorNeutral: "#EDEDEF",
-          colorDanger: "#F05A5A",
-          fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-          borderRadius: "10px",
-        },
-      }}
     >
       <html lang="en" className="dark">
         <body className="antialiased">
