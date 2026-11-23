@@ -14,7 +14,10 @@ import { cn } from "@/lib/utils";
 export function useWidth<T extends HTMLElement>() {
   const [node, setNode] = useState<T | null>(null);
   const [w, setW] = useState(0);
-  const ref = useCallback((el: T | null) => setNode(el), []);
+  const ref = useCallback((el: T | null) => {
+    setNode(el);
+    if (el) setW(Math.floor(el.getBoundingClientRect().width));
+  }, []);
   useEffect(() => {
     if (!node) return;
     const ro = new ResizeObserver(([e]) => setW(Math.floor(e.contentRect.width)));
