@@ -6,6 +6,7 @@ import type { VolState } from "@/lib/vol/use-vol";
 import { BAND_LABEL, GROUPS, groupSummary, usdShort, type Band, type PulseMetric } from "@/lib/pulse/pulse";
 import { usePulse } from "@/lib/pulse/use-pulse";
 import { cn } from "@/lib/utils";
+import { EntryMap, Sparkline } from "@/components/analytics/mini-chart";
 
 // ════════════════════════════════════════════════════════════════
 // Market Pulse tab — Glassnode Market Pulse format for one HL coin.
@@ -82,7 +83,7 @@ export function PulsePanel({ vol, coin, oiUsd }: { vol: VolState; coin: string; 
                 {sum.trend && <span> · {sum.trend}</span>}
               </span>
             </div>
-            {ms.map((m) => <MetricCard key={m.id} m={m} />)}
+            {ms.map((m) => <MetricCard key={m.id} m={m} chart />)}
           </section>
         );
       })}
@@ -95,7 +96,13 @@ export function PulsePanel({ vol, coin, oiUsd }: { vol: VolState; coin: string; 
   );
 }
 
-function MetricCard({ m }: { m: PulseMetric }) {
+const fmtFor = (id: string) => (v: number) =>
+  id === "volume" || id === "oi" || id === "cvd" ? usdShort(v)
+    : id === "funding" || id === "rv7" ? `${v.toFixed(1)}%`
+    : id === "ivrv" ? `${v > 0 ? "+" : ""}${v.toFixed(1)} pts`
+    : v.toFixed(1);
+
+function MetricCard({ m, chart }: { m: PulseMetric; chart?: boolean }) {
   return (
     <div className="rounded-[10px] bg-void border border-border px-3 py-2.5">
       <div className="flex items-baseline justify-between gap-2">
@@ -117,6 +124,7 @@ function MetricCard({ m }: { m: PulseMetric }) {
         )}
       </div>
       {m.band && m.window && <div className="text-[11.5px] text-txt-muted mt-0.5">{m.window}</div>}
+      {chart && m.series && m.series.length > 2 && <Sparkline series={m.series} range={m.range} bars={m.bars} format={fmtFor(m.id)} />}
       <p className="text-[13px] text-[#C2C2C8] leading-[1.45] mt-1">{m.read}</p>
     </div>
   );
@@ -146,7 +154,7 @@ export function CostBasisPanel({ px, cohorts }: { px: number | null; cohorts: Co
     let acc = 0, span = 0.1;
     for (const x of byDist) { acc += x.u; if (acc >= total * 0.9) { span = x.d * 1.05; break; } }
     span = Math.min(0.4, Math.max(0.1, span));
-    const lo = px * (1 - span), hi = px * (1 + span), rows = 24, step = (hi - lo) / rows;
+    const lo = px * (1 - span), hi = px * (1 + span), rows = 48, step = (hi - lo) / rows;
     const bins = Array.from({ length: rows }, (_, i) => ({ lo: lo + i * step, hi: lo + (i + 1) * step, long: 0, short: 0 }));
     let outside = 0;
     for (const [e, u] of entries) {
@@ -159,8 +167,6 @@ export function CostBasisPanel({ px, cohorts }: { px: number | null; cohorts: Co
 
   if (!cohorts) return <div className="m-4 h-[120px] skeleton" />;
   if (!view || !px) return <div className="px-4 py-3 text-[13px] text-txt-secondary">No tracked wallets hold this coin right now.</div>;
-  const max = Math.max(...view.bins.map((b) => Math.max(b.long, b.short)), 1);
-  const pxRow = view.bins.findIndex((b) => px >= b.lo && px < b.hi);
 
   const SideCard = ({ label, s, long }: { label: string; s: typeof view.longs; long: boolean }) => (
     <div className="rounded-[10px] bg-void border border-border px-3 py-2.5">
@@ -195,8 +201,8 @@ export function CostBasisPanel({ px, cohorts }: { px: number | null; cohorts: Co
   );
 
   return (
-    <div className="p-3 flex gap-3 min-h-full">
-      <div className="flex-1 min-w-0 flex flex-col gap-2">
+    <div className="p-3 flex flex-col gap-3 min-h-full">
+      <div className="flex flex-col gap-2">
         <div className="grid grid-cols-2 gap-2">
           <SideCard label="Tracked longs" s={view.longs} long />
           <SideCard label="Tracked shorts" s={view.shorts} long={false} />
@@ -206,21 +212,17 @@ export function CostBasisPanel({ px, cohorts }: { px: number | null; cohorts: Co
           A sample of the market, not all of it: Hyperliquid positions are public, so this is real entries, not an estimate.
         </p>
       </div>
-      <div className="w-[300px] shrink-0 rounded-[10px] bg-void border border-border px-3 py-2.5">
+      <div className="rounded-[10px] bg-void border border-border px-3 pt-2.5 pb-2">
         <div className="flex items-baseline justify-between">
-          <span className="text-[12px] text-txt-secondary">Entry distribution · ±{Math.round(view.span * 100)}%</span>
-          <span className="text-[12px] text-txt-muted"><span className="text-positive">long</span> · <span className="text-negative">short</span></span>
+          <span className="text-[13px] font-semibold text-txt-primary">Entry map</span>
+          <span className="text-[12px] text-txt-muted">
+            Where tracked positions were opened · ±{Math.round(view.span * 100)}% of price
+            {view.outside > 0 && ` · ${usdShort(view.outside)} entered further away`}
+          </span>
         </div>
-        <div className="mt-1.5">
-          {view.bins.map((b, i) => (
-            <div key={i} className={cn("grid grid-cols-[1fr_58px_1fr] items-center h-[13px] gap-1", i === pxRow && "bg-white/[0.06] rounded-sm")}>
-              <div className="flex justify-end h-2"><div className="h-full rounded-sm bg-negative/70" style={{ width: `${(b.short / max) * 100}%` }} /></div>
-              <span className={cn("ds-num text-[9.5px] text-center", i === pxRow ? "text-txt-primary font-semibold" : "text-txt-muted")}>{fmtPrice(roundTo((b.lo + b.hi) / 2))}</span>
-              <div className="h-2"><div className="h-full rounded-sm bg-positive/70" style={{ width: `${(b.long / max) * 100}%` }} /></div>
-            </div>
-          ))}
+        <div className="mt-2">
+          <EntryMap bins={[...view.bins].reverse()} px={px} longAvg={view.longs.avg} shortAvg={view.shorts.avg} fmt={(v) => fmtPrice(roundTo(v))} />
         </div>
-        {view.outside > 0 && <div className="mt-1 text-[11.5px] text-txt-muted">{usdShort(view.outside)} entered further away</div>}
       </div>
     </div>
   );

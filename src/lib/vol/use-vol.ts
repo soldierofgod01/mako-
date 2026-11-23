@@ -1,7 +1,7 @@
 "use client";
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { buildSurface, realizedVol, toRows, type DeribitSummary, type VolSurface } from "./options";
+import { buildSurface, realizedVol, rollingRv, toRows, type DeribitSummary, type VolSurface } from "./options";
 
 // ════════════════════════════════════════════════════════════════
 // useVol(coin) — volatility context for one coin.
@@ -35,6 +35,8 @@ export interface VolState {
   dvol: { t: number; v: number }[] | null;
   dvolNow: number | null;
   rv: { d1: number | null; d7: number | null; d30: number | null } | null;
+  /** Rolling 30-day realised vol (%), hourly points over the last ~30 days. */
+  rvSeries: { t: number; v: number }[] | null;
   loading: boolean;
   error: boolean;
   updatedAt: number | null;
@@ -84,17 +86,18 @@ export function useVol(coin: string, spot: number | null, chartIntervalMs: numbe
   });
 
   const rvQ = useQuery({
-    queryKey: ["hl-1h-rv", coin],
+    queryKey: ["hl-1h-rv-v2", coin],
     queryFn: async () => {
       const now = Date.now();
       const raw = await getJson<{ t: number; c: string }[]>(HL_INFO, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ type: "candleSnapshot", req: { coin, interval: "1h", startTime: now - 31 * 24 * 3600_000, endTime: now } }),
+        body: JSON.stringify({ type: "candleSnapshot", req: { coin, interval: "1h", startTime: now - 61 * 24 * 3600_000, endTime: now } }),
       });
       const closes = raw.map((k) => +k.c);
       const PPY = 24 * 365;
-      return { d1: realizedVol(closes, 24, PPY), d7: realizedVol(closes, 24 * 7, PPY), d30: realizedVol(closes, 24 * 30, PPY) };
+      const series = rollingRv(raw.map((k) => ({ t: k.t, c: +k.c })), 24 * 30, PPY).filter((p) => p.t >= now - 30 * 24 * 3600_000);
+      return { d1: realizedVol(closes, 24, PPY), d7: realizedVol(closes, 24 * 7, PPY), d30: realizedVol(closes, 24 * 30, PPY), series };
     },
     refetchInterval: 5 * 60_000,
     refetchOnWindowFocus: false,
@@ -114,7 +117,8 @@ export function useVol(coin: string, spot: number | null, chartIntervalMs: numbe
     surface,
     dvol,
     dvolNow: dvol?.length ? dvol[dvol.length - 1].v : null,
-    rv: rvQ.data ?? null,
+    rv: rvQ.data ? { d1: rvQ.data.d1, d7: rvQ.data.d7, d30: rvQ.data.d30 } : null,
+    rvSeries: rvQ.data?.series ?? null,
     loading: (!!src && chainQ.isLoading) || rvQ.isLoading,
     error: (!!src && chainQ.isError) || rvQ.isError,
     updatedAt: chainQ.data?.t ?? null,

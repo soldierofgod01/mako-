@@ -98,6 +98,8 @@ export interface VolSurface {
   flip: number | null;
   maxPain: { expiry: number; strike: number } | null;
   totalOi: number;
+  /** IV by strike (%) for the expiry nearest 30d, within ±30% of its forward. */
+  smile: { expiry: number; days: number; fwd: number; pts: { strike: number; call: number | null; put: number | null }[] } | null;
 }
 
 const MIN_T = 1 / (365 * 24); // ignore options with < 1h left
@@ -261,8 +263,28 @@ export function buildSurface(rows: OptionRow[], spotIn: number | null, now = Dat
     if (bestK > 0) maxPain = { expiry: e, strike: bestK };
   }
 
+  // Smile for the expiry closest to 30 days.
+  let smile: VolSurface["smile"] = null;
+  {
+    const t30 = term.reduce<(typeof term)[number] | null>((b, p) => (!b || Math.abs(p.days - 30) < Math.abs(b.days - 30) ? p : b), null);
+    if (t30) {
+      const rs = byExp.get(t30.expiry)!;
+      const fwd = rs[0].fwd;
+      const byK = new Map<number, { call: number | null; put: number | null }>();
+      for (const q of rs) {
+        if (q.strike < fwd * 0.7 || q.strike > fwd * 1.3) continue;
+        const cur = byK.get(q.strike) ?? { call: null, put: null };
+        if (q.type === "C") cur.call = q.iv * 100; else cur.put = q.iv * 100;
+        byK.set(q.strike, cur);
+      }
+      const pts = [...byK.entries()].map(([strike, v]) => ({ strike, ...v })).sort((a, b) => a.strike - b.strike);
+      if (pts.length >= 4) smile = { expiry: t30.expiry, days: t30.days, fwd, pts };
+    }
+  }
+
   return {
     spot,
+    smile,
     term: term.map(({ rr: _rr, ...p }) => p),
     atm30: atm30 != null ? atm30 * 100 : null,
     front,

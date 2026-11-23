@@ -19,6 +19,10 @@ export interface PulseMetric {
   band: Band | null;
   window: string | null; // e.g. "vs 90d", "vs 6d (history building)"
   read: string;
+  /** History for the tile chart (oldest first) and the 20th–80th percentile "normal range" of the comparison window. */
+  series?: { t: number; v: number }[];
+  range?: { lo: number; hi: number };
+  bars?: boolean;
 }
 
 export type PulseGroupId = "price" | "perps" | "options" | "liquidity";
@@ -55,6 +59,14 @@ export const BAND_LABEL: Record<Band, string> = {
   upper: "Upper part of range",
   high: "Above high band",
 };
+
+/** 20th/80th percentiles — the band edges used for low/high. */
+export function rangeOf(hist: number[]): { lo: number; hi: number } | undefined {
+  const h = hist.filter((v) => Number.isFinite(v)).sort((a, b) => a - b);
+  if (h.length < 10) return undefined;
+  const q = (p: number) => h[Math.min(h.length - 1, Math.max(0, Math.round(p * (h.length - 1))))];
+  return { lo: q(0.2), hi: q(0.8) };
+}
 
 // ─── series helpers ─────────────────────────────────────────────
 
@@ -137,6 +149,8 @@ export function buildPulse(x: PulseInputs): PulseMetric[] {
       id: "momentum", group: "price", label: "Price momentum", value: now, display: now.toFixed(1),
       change: prev != null ? signed(now - prev, 1) : null, changeSign: sgn(prev != null ? now - prev : null),
       pct, window: "RSI 14d vs 180d",
+      series: r.slice(-90).map((v, i, a) => ({ t: x.daily[x.daily.length - a.length + i].t, v })),
+      range: rangeOf(r.slice(-181, -1)),
       read: now < 30 ? "Deeply oversold — sellers have pressed hard." : now > 70 ? "Stretched upside — buyers have pressed hard." : pct != null && pct < 20 ? "Weak momentum for this coin's range." : pct != null && pct > 80 ? "Strong momentum for this coin's range." : "Neutral momentum.",
     });
   }
@@ -152,6 +166,8 @@ export function buildPulse(x: PulseInputs): PulseMetric[] {
       id: "volume", group: "price", label: "Volume (last full day)", value: last, display: usdShort(last),
       change: prev ? signed(((last - prev) / prev) * 100, 0, "%") : null, changeSign: sgn(prev ? last - prev : null),
       pct, window: "vs 90d",
+      series: vol.slice(-91, -1).map((v, i, a) => ({ t: x.daily[x.daily.length - 1 - a.length + i].t, v })),
+      range: rangeOf(vol.slice(-92, -2)), bars: true,
       read: pct == null ? "Turnover history building." : pct > 80 ? "Heavy participation — one of the busiest days in 3 months." : pct < 20 ? "Thin participation — moves are less trustworthy." : "Normal turnover.",
     });
   }
@@ -166,6 +182,8 @@ export function buildPulse(x: PulseInputs): PulseMetric[] {
       id: "rv7", group: "price", label: "Realised vol (7d)", value: now, display: `${now.toFixed(1)}%`,
       change: prev != null ? signed(now - prev, 1, " pts") : null, changeSign: sgn(prev != null ? now - prev : null),
       pct, window: "vs 90d",
+      series: rv7.slice(-90).map((v, i, a) => ({ t: x.daily[x.daily.length - a.length + i].t, v })),
+      range: rangeOf(rv7.slice(-91, -1)),
       read: pct == null ? "History building." : pct > 80 ? "Volatile — ranges are wide; size down." : pct < 20 ? "Compressed — the tape is unusually quiet." : "Normal volatility.",
     });
   }
@@ -188,6 +206,8 @@ export function buildPulse(x: PulseInputs): PulseMetric[] {
       id: "oi", group: "perps", label: "Open interest", value: nowUsd, display: usdShort(nowUsd),
       change: `${signed(((now - ref.oi) / ref.oi) * 100, 1, "%")}${days < 7 ? ` (${days}d)` : ""}`, changeSign: sgn(now - ref.oi),
       pct, window: `vs ${spanDays}d${spanDays < 7 ? " (history building)" : ""}`,
+      series: x.oi.filter((_, i) => i % 12 === 0).map((q) => ({ t: q.t, v: q.oi * q.px })),
+      range: rangeOf(x.oi.filter((_, i) => i % 12 === 0).map((q) => q.oi * q.px)),
       read: pct == null ? "History building." : pct > 80 ? "Leverage building — positioning is crowded." : pct < 20 ? "Leverage flushed — fewer positions left to force out." : "Normal leverage.",
     });
   }
@@ -199,7 +219,8 @@ export function buildPulse(x: PulseInputs): PulseMetric[] {
       const d = Math.floor(f.t / 86_400_000);
       (byDay.get(d) ?? byDay.set(d, []).get(d)!).push(f.rate);
     }
-    const daily = [...byDay.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v.reduce((s, q) => s + q, 0) / v.length);
+    const dayKeys = [...byDay.keys()].sort((a, b) => a - b);
+    const daily = dayKeys.map((k) => byDay.get(k)!).map((v) => v.reduce((s, q) => s + q, 0) / v.length);
     const avg7 = rollingMean(daily, 7).map((h) => h * 24 * 365 * 100);
     const now = avg7[avg7.length - 1];
     const prev = avg7[avg7.length - 8] ?? null;
@@ -208,6 +229,8 @@ export function buildPulse(x: PulseInputs): PulseMetric[] {
       id: "funding", group: "perps", label: "Funding (7d avg, APR)", value: now, display: signed(now, 1, "%"),
       change: prev != null ? signed(now - prev, 1, " pts") : null, changeSign: sgn(prev != null ? now - prev : null),
       pct, window: `vs ${Math.min(90, avg7.length)}d`,
+      series: avg7.slice(-90).map((v, i, a) => ({ t: dayKeys[dayKeys.length - a.length + i] * 86_400_000, v })),
+      range: rangeOf(avg7.slice(-91, -1)),
       // Sign decides who pays; the band says whether that's unusual for this coin.
       read: now < 0
         ? now < -5 ? "Shorts paying — the short side is crowded; squeeze fuel." : "Slightly negative — shorts paying a little."
@@ -227,6 +250,8 @@ export function buildPulse(x: PulseInputs): PulseMetric[] {
       id: "cvd", group: "perps", label: "Perp CVD (last full day)", value: last.net, display: usdShort(last.net),
       change: prev ? `${usdShort(last.net - prev.net)} vs 7d ago` : null, changeSign: sgn(prev ? last.net - prev.net : null),
       pct, window: `vs ${full.length - 1}d${full.length < 15 ? " (history building)" : ""}`,
+      series: full.map((d) => ({ t: d.t, v: d.net })), bars: true,
+      range: rangeOf(full.slice(0, -1).map((d) => d.net)),
       read: last.net < 0 ? (pct != null && pct < 20 ? "Heavy aggressive selling — takers are hitting bids." : "Net aggressive selling.") : pct != null && pct > 80 ? "Heavy aggressive buying — takers are lifting offers." : "Net aggressive buying.",
     });
   }
@@ -238,7 +263,8 @@ export function buildPulse(x: PulseInputs): PulseMetric[] {
     if (x.dvolDaily && x.dvolDaily.length > 30) {
       const ivByDay = new Map(x.dvolDaily.map((d) => [Math.floor(d.t / 86_400_000), d.v]));
       const dayIdx = x.daily.slice(-rv30.length).map((d) => Math.floor(d.t / 86_400_000));
-      const spreads = dayIdx.map((d, i) => (ivByDay.has(d) ? ivByDay.get(d)! - rv30[i] : NaN)).filter((v) => Number.isFinite(v));
+      const spreadPts = dayIdx.map((d, i) => ({ t: d * 86_400_000, v: ivByDay.has(d) ? ivByDay.get(d)! - rv30[i] : NaN })).filter((q) => Number.isFinite(q.v));
+      const spreads = spreadPts.map((q) => q.v);
       const ivNow = x.dvolDaily[x.dvolDaily.length - 1].v;
       const now = ivNow - rvNow;
       const prev = spreads[spreads.length - 8] ?? null;
@@ -247,6 +273,7 @@ export function buildPulse(x: PulseInputs): PulseMetric[] {
         id: "ivrv", group: "options", label: "Volatility spread (DVOL − RV30)", value: now, display: signed(now, 1, " pts"),
         change: prev != null ? signed(now - prev, 1, " pts") : null, changeSign: sgn(prev != null ? now - prev : null),
         pct, window: "vs 90d",
+        series: spreadPts.slice(-90), range: rangeOf(spreads.slice(-91, -1)),
         read: pct != null && pct > 80 ? "Options rich vs realised — the market is paying for movement or protection." : pct != null && pct < 20 ? "Options cheap vs realised — movement is under-priced." : "Implied roughly in line with realised.",
       });
     } else if (x.atmIv30 != null) {
