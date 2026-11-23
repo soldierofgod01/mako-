@@ -277,10 +277,10 @@ void main() {
 `
 
 const UNIFORMS = {
-  // Mako dark: the landing-page dome indigo (#4D2FF9 → #5667FF), dimmed, rising
+  // Mako dark: the landing-page dome indigo (#4D2FF9 core → #5667FF), rising
   // from the bottom into near-black
-  colors: [[0.19,0.13,0.62],[0.09,0.07,0.33],[0.03,0.025,0.10],[0.012,0.012,0.02],[0.008,0.008,0.01],[0,0,0],[0,0,0],[0,0,0]] as [number, number, number][],
-  colorCount: 5,
+  colors: [[0.302,0.184,0.976],[0.337,0.404,1.0],[0.08,0.09,0.28],[0.015,0.015,0.04],[0.008,0.008,0.01],[0.008,0.008,0.01],[0,0,0],[0,0,0]] as [number, number, number][],
+  colorCount: 6,
   scale: 1.320,
   intensity: 0.490,
   paramA: 0.840,
