@@ -3,7 +3,6 @@ import Link from "next/link"
 // Shared shell for the legal pages: same nav and footer as the home page, a narrow reading column.
 
 export const CONTACT_EMAIL = "[contact email]"
-export const GRIEVANCE_OFFICER = "[name]"
 export const UPDATED = "24 November 2026"
 
 export function LegalPage({ title, children }: { title: string; children: React.ReactNode }) {

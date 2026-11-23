@@ -1,5 +1,5 @@
 import type { Metadata } from "next"
-import { CONTACT_EMAIL, GRIEVANCE_OFFICER, LegalPage } from "@/components/Legal"
+import { CONTACT_EMAIL, LegalPage } from "@/components/Legal"
 
 export const metadata: Metadata = { title: "Privacy Policy · Mako" }
 
@@ -26,19 +26,12 @@ export default function Privacy() {
 
       <h2>Who holds it</h2>
       <p>
-        Your data is held by the hosting and database providers we use to run Mako, on servers outside India, including in Singapore. We
-        don’t sell or rent your data, or share it for marketing. We’ll only disclose it if the law requires us to.
+        Your data is held by the hosting and database providers we use to run Mako. We don’t sell or rent your data, or share it for
+        marketing. We’ll only disclose it if the law requires us to.
       </p>
 
       <h2>How long we keep it</h2>
       <p>We keep your email address until you unsubscribe or ask us to delete it.</p>
-
-      <h2>Your rights</h2>
-      <p>
-        You can ask to see the personal data we hold about you, correct it or delete it, and you can withdraw your consent at any time by
-        unsubscribing or emailing us. You can also nominate someone to exercise these rights for you. If you’re not satisfied with our
-        response, you can complain to the Data Protection Board of India.
-      </p>
 
       <h2>Security</h2>
       <p>We take reasonable steps to protect your data, including restricting who can access it. If a breach affects your data, we’ll tell you as the law requires.</p>
@@ -49,10 +42,9 @@ export default function Privacy() {
       <h2>Changes</h2>
       <p>If we change this policy, we’ll update the date above and email the waitlist about any important change.</p>
 
-      <h2>Grievance Officer</h2>
+      <h2>Contact</h2>
       <p>
-        For any question, request or complaint about your data, contact our Grievance Officer, {GRIEVANCE_OFFICER}, at{" "}
-        <strong>{CONTACT_EMAIL}</strong>. We’ll respond within one month.
+        To unsubscribe, have your data deleted, or ask anything about it, email <strong>{CONTACT_EMAIL}</strong>.
       </p>
     </LegalPage>
   )

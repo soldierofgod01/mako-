@@ -45,10 +45,7 @@ export default function Terms() {
       <h2>8. Changes</h2>
       <p>We may update these terms. If you keep using Mako after a change, you accept the updated terms.</p>
 
-      <h2>9. Governing law</h2>
-      <p>These terms are governed by the laws of India.</p>
-
-      <h2>10. Contact</h2>
+      <h2>9. Contact</h2>
       <p><strong>{CONTACT_EMAIL}</strong></p>
     </LegalPage>
   )
