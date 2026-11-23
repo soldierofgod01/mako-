@@ -10,13 +10,32 @@ import { buildScreener, MIN_VOLUME, type MarketChange, type ScreenerHistory } fr
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
+// The history RPCs can time out on a cold start (~1–2s each normally). Retry
+// once, and fall back to the last good result this instance saw, so a slow
+// call never blanks the timeframe / OI-change / sparkline columns.
+let lastChanges: MarketChange[] = [];
+let lastHistory: ScreenerHistory[] = [];
+async function rpcRetry<T>(fn: string): Promise<T> {
+  try { return await supabaseRpc<T>(fn, {}); }
+  catch (e) {
+    console.warn(`screener: ${fn} failed, retrying`, String(e).slice(0, 160));
+    return supabaseRpc<T>(fn, {});
+  }
+}
+
 export async function GET() {
   try {
     const [markets, snap, changes, history] = await Promise.all([
       fetchHLPerpMarkets(),
       getCohortSnapshot(),
-      supabaseRpc<MarketChange[]>("market_changes", {}).catch(() => [] as MarketChange[]),
-      supabaseRpc<ScreenerHistory[]>("screener_history", {}).catch(() => [] as ScreenerHistory[]),
+      rpcRetry<MarketChange[]>("market_changes").then((r) => (r.length ? (lastChanges = r) : lastChanges)).catch((e) => {
+        console.error("screener: market_changes failed", String(e).slice(0, 160));
+        return lastChanges;
+      }),
+      rpcRetry<ScreenerHistory[]>("screener_history").then((r) => (r.length ? (lastHistory = r) : lastHistory)).catch((e) => {
+        console.error("screener: screener_history failed", String(e).slice(0, 160));
+        return lastHistory;
+      }),
     ]);
     const liquid = markets.filter((m) => m.volume24hUsd >= MIN_VOLUME);
     const { rows: scan, market } = buildScan(liquid, snap.byCoin);

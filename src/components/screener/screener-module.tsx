@@ -229,7 +229,8 @@ export function ScreenerModule() {
       if (!r.ok) throw new Error("screener");
       return r.json();
     },
-    refetchInterval: 30_000,
+    // A round without history (hist 0) refetches in 5s instead of 30s.
+    refetchInterval: (q) => ((q.state.data as Resp | undefined)?.historyMinutes === 0 ? 5_000 : 30_000),
     refetchOnWindowFocus: false,
   });
 
@@ -257,7 +258,9 @@ export function ScreenerModule() {
   const open = (coin: string) => { setBiasCoin(coin); setActiveModule("terminal"); };
 
   const hist = data?.historyMinutes ?? 0;
-  const histNote = hist < 24 * 60
+  // hist === 0 means the history call failed this round (it fills on the next
+  // refresh), not that nothing is collected — so only explain a genuine build-up.
+  const histNote = hist > 0 && hist < 24 * 60
     ? `Timeframe, OI-change and 24h-chart columns fill as Mako's own history builds · ${hist < 60 ? `${hist}m` : `${Math.floor(hist / 60)}h ${hist % 60}m`} of 24h collected`
     : null;
   const sortIcon = (k?: keyof ScreenerRow) =>
