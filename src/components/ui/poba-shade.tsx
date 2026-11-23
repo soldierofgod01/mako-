@@ -310,13 +310,15 @@ export function ShaderBackground({ className }: { className?: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
+    const canvasEl = canvasRef.current
+    if (!canvasEl) return
+    const canvas: HTMLCanvasElement = canvasEl
     const pendingRelease = pendingContextReleases.get(canvas)
     if (pendingRelease !== undefined) window.clearTimeout(pendingRelease)
     pendingContextReleases.delete(canvas)
-    const gl = canvas.getContext("webgl", { antialias: false })
-    if (!gl) return
+    const glCtx = canvas.getContext("webgl", { antialias: false })
+    if (!glCtx) return
+    const gl: WebGLRenderingContext = glCtx
 
     const compile = (type: number, src: string) => {
       const s = gl.createShader(type)!
@@ -517,8 +519,8 @@ export function ShaderBackground({ className }: { className?: string }) {
       mouseY += (targetY - mouseY) * follow
       cursorPresence += (targetPresence - cursorPresence) * follow
       resizeCanvas()
-      const width = canvas!.width
-      const height = canvas!.height
+      const width = canvas.width
+      const height = canvas.height
       gl.uniform4f(
         uni.scene,
         width,
