@@ -126,7 +126,7 @@ export function VolPanel({ vol, px }: { vol: VolState; px: number | null }) {
     <div className="flex gap-3 shrink-0">
       <div className="flex-1 min-w-0 flex flex-col gap-2">
         <CoverageLine vol={vol} />
-        <div className="grid grid-cols-2 xl:grid-cols-4 gap-2">
+        <div className="flex-1 grid grid-cols-2 xl:grid-cols-4 auto-rows-fr gap-3">
           {tiles.map((t) => (
             <div key={t.label} className="rounded-lg border border-border bg-[#0C0C0F] px-3 py-2.5">
               <div className="flex items-baseline justify-between gap-2">

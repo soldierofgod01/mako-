@@ -144,7 +144,7 @@ function MetricCard({ m, chart }: { m: PulseMetric; chart?: boolean }) {
         <Gauge value={m.value} min={-10} max={10} center={0} leftLabel="puts bid" rightLabel="calls bid" format={(v) => `${v > 0 ? "+" : ""}${v}`} />
       )}
       {chart && m.id === "depth" && m.value != null && depthRatio(m) != null && (
-        <Gauge value={depthRatio(m)!} min={0} max={5} leftLabel="thin" rightLabel="deep" format={(v) => `${v}% of OI`} />
+        <Gauge value={depthRatio(m)!} min={0} max={15} leftLabel="thin" rightLabel="deep" format={(v) => `${v}% of OI`} />
       )}
       <p className="text-[13px] text-[#C2C2C8] leading-[1.45] mt-1">{m.read}</p>
     </div>
@@ -169,13 +169,21 @@ export function CostBasisPanel({ px, cohorts }: { px: number | null; cohorts: Co
       const under = es.filter(([e]) => (long ? e > px : e < px)).reduce((s, [, u]) => s + Math.abs(u), 0);
       return { n: es.length, usd, avg, underShare: usd > 0 ? under / usd : null };
     };
-    // Entry distribution: range widens until it holds ~90% of tracked notional (10%–40% each side).
-    const byDist = entries.map(([e, u]) => ({ d: Math.abs(e / px - 1), u: Math.abs(u) })).sort((a, b) => a.d - b.d);
-    const total = byDist.reduce((s, x) => s + x.u, 0);
-    let acc = 0, span = 0.1;
-    for (const x of byDist) { acc += x.u; if (acc >= total * 0.9) { span = x.d * 1.05; break; } }
-    span = Math.min(0.4, Math.max(0.1, span));
-    const lo = px * (1 - span), hi = px * (1 + span), rows = 48, step = (hi - lo) / rows;
+    // Entry distribution: fit the price range to where the middle 90% of tracked notional
+    // was entered (5th–95th pct by $), always keeping current price inside, so no side is empty.
+    const byPx = entries.map(([e, u]) => ({ e, u: Math.abs(u) })).sort((a, b) => a.e - b.e);
+    const total = byPx.reduce((s, x) => s + x.u, 0);
+    let acc = 0, qLo = byPx[0].e, qHi = byPx[byPx.length - 1].e, gotLo = false;
+    for (const x of byPx) {
+      acc += x.u;
+      if (!gotLo && acc >= total * 0.05) { qLo = x.e; gotLo = true; }
+      if (acc >= total * 0.95) { qHi = x.e; break; }
+    }
+    let lo = Math.min(qLo, px * 0.97), hi = Math.max(qHi, px * 1.03);
+    const padR = (hi - lo) * 0.04; lo -= padR; hi += padR;
+    lo = Math.max(lo, px * 0.6); hi = Math.min(hi, px * 1.4);
+    const span = Math.max(px - lo, hi - px) / px;
+    const rows = 48, step = (hi - lo) / rows;
     const bins = Array.from({ length: rows }, (_, i) => ({ lo: lo + i * step, hi: lo + (i + 1) * step, long: 0, short: 0 }));
     let outside = 0;
     for (const [e, u] of entries) {
@@ -237,7 +245,7 @@ export function CostBasisPanel({ px, cohorts }: { px: number | null; cohorts: Co
         <div className="flex items-baseline justify-between shrink-0">
           <span className="text-[13px] font-semibold text-txt-primary">Entry map</span>
           <span className="text-[12px] text-txt-muted">
-            Where tracked positions were opened · ±{Math.round(view.span * 100)}% of price
+            Where tracked positions were opened · middle 90% of notional
             {view.outside > 0 && ` · ${usdShort(view.outside)} entered further away`}
           </span>
         </div>
