@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 
 // ════════════════════════════════════════════════════════════════
@@ -10,15 +10,17 @@ import { cn } from "@/lib/utils";
 // Measured width (no viewBox stretching), so strokes and dots stay crisp.
 // ════════════════════════════════════════════════════════════════
 
+/** Width of an element, re-measured on resize. Callback ref, so it works even when the element mounts after the first render. */
 export function useWidth<T extends HTMLElement>() {
-  const ref = useRef<T>(null);
+  const [node, setNode] = useState<T | null>(null);
   const [w, setW] = useState(0);
+  const ref = useCallback((el: T | null) => setNode(el), []);
   useEffect(() => {
-    if (!ref.current) return;
+    if (!node) return;
     const ro = new ResizeObserver(([e]) => setW(Math.floor(e.contentRect.width)));
-    ro.observe(ref.current);
+    ro.observe(node);
     return () => ro.disconnect();
-  }, []);
+  }, [node]);
   return [ref, w] as const;
 }
 
