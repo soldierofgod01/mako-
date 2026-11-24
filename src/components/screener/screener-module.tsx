@@ -226,8 +226,23 @@ export function ScreenerModule() {
     queryKey: ["screener-v3"],
     queryFn: async (): Promise<Resp> => {
       const r = await fetch("/api/screener");
-      if (!r.ok) throw new Error("screener");
-      return r.json();
+      if (r.ok) return r.json();
+      // Server couldn't reach Hyperliquid (usually HL rate-limiting Vercel's
+      // shared IPs). Fetch the market list from this browser and let the
+      // server build the rest from it.
+      const hl = await fetch("https://api.hyperliquid.xyz/info", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "metaAndAssetCtxs" }),
+      });
+      if (!hl.ok) throw new Error("screener");
+      const r2 = await fetch("/api/screener", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: await hl.text(),
+      });
+      if (!r2.ok) throw new Error("screener");
+      return r2.json();
     },
     // A round without history (hist 0) refetches in 5s instead of 30s.
     refetchInterval: (q) => ((q.state.data as Resp | undefined)?.historyMinutes === 0 ? 5_000 : 30_000),

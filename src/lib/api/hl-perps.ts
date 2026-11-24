@@ -51,7 +51,16 @@ export async function fetchHLPerpMarkets(): Promise<HLPerpMarket[]> {
     throw new Error(`Hyperliquid ${res.status}: ${res.statusText}`);
   }
 
-  const [meta, ctxs] = (await res.json()) as [
+  return parseHLPerpMarkets(await res.json());
+}
+
+// Raw `metaAndAssetCtxs` response → markets. Also used when the browser fetched
+// the raw response itself (screener fallback when HL rate-limits our servers).
+export function parseHLPerpMarkets(raw: unknown): HLPerpMarket[] {
+  if (!Array.isArray(raw) || raw.length < 2 || !Array.isArray((raw[0] as { universe?: unknown })?.universe) || !Array.isArray(raw[1])) {
+    throw new Error("Hyperliquid: unexpected metaAndAssetCtxs shape");
+  }
+  const [meta, ctxs] = raw as [
     { universe: HLAssetMeta[] },
     HLAssetCtx[],
   ];

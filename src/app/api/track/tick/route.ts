@@ -21,6 +21,9 @@ export async function GET(req: Request) {
   }
   try {
     const [markets, snap] = await Promise.all([fetchHLPerpMarkets(), getCohortSnapshot()]);
+    // The snapshot falls back to the last good one when HL rate-limits us; don't
+    // record a missing or stale one as if it were fresh.
+    if (Date.now() - snap.at > 15 * 60_000) throw new Error("cohort snapshot unavailable or stale");
     const { rows, market } = buildScan(markets, snap.byCoin);
 
     // Prices for every scanned coin (used to grade older snapshots).

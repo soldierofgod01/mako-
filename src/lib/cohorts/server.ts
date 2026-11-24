@@ -23,6 +23,7 @@ interface Cache {
   cohorts?: { at: number; sharps: CohortWallet[]; donors: CohortWallet[] };
   positions?: { at: number; byCoin: Record<string, CoinCohorts>; sharpsOk: number; donorsOk: number };
   inflight?: Promise<void>;
+  retryAt?: number; // after a thin (rate-limited) refresh, wait before trying again
 }
 const g = globalThis as unknown as { __makoCohorts?: Cache };
 const cache: Cache = (g.__makoCohorts ??= {});
@@ -84,6 +85,15 @@ async function refreshPositions(): Promise<void> {
   ]);
   const sOk = sp.filter((x): x is WalletPosition[] => x !== null);
   const dOk = dp.filter((x): x is WalletPosition[] => x !== null);
+  // If HL rate-limited most of the wallet reads (429s on Vercel's shared IPs),
+  // keep the last good snapshot instead of replacing it with a thin one.
+  const prev = cache.positions;
+  const okNow = sOk.length + dOk.length;
+  if (prev && okNow < 0.5 * (prev.sharpsOk + prev.donorsOk)) {
+    console.warn(`cohorts: only ${okNow} wallets read (prev ${prev.sharpsOk + prev.donorsOk}), keeping last snapshot`);
+    cache.retryAt = Date.now() + 30_000;
+    return;
+  }
   cache.positions = { at: Date.now(), byCoin: buildCoinCohorts(sOk, dOk), sharpsOk: sOk.length, donorsOk: dOk.length };
 }
 
@@ -96,10 +106,16 @@ export interface CohortSnapshot {
 }
 
 export async function getCohortSnapshot(): Promise<CohortSnapshot> {
-  const stale = !cache.positions || Date.now() - cache.positions.at > POSITIONS_TTL;
+  const now = Date.now();
+  const stale = !cache.positions || (now - cache.positions.at > POSITIONS_TTL && now >= (cache.retryAt ?? 0));
   if (stale) {
     cache.inflight ??= refreshPositions().finally(() => { cache.inflight = undefined; });
-    await cache.inflight;
+    try {
+      await cache.inflight;
+    } catch (e) {
+      // Leaderboard or HL down: serve the last snapshot (or none) rather than failing callers.
+      console.error("cohorts: refresh failed", String(e).slice(0, 160));
+    }
   }
-  return cache.positions!;
+  return cache.positions ?? { at: 0, byCoin: {}, sharpsOk: 0, donorsOk: 0 };
 }

@@ -2,15 +2,15 @@
 
 import { useState } from "react";
 
-// ─── Token icon: Hyperliquid's own coin art → open-source set → letter ───
-// 1. app.hyperliquid.xyz/coins/<COIN>.svg — covers HL-native coins (HYPE,
-//    PUMP, ASTER…) that generic icon sets miss. Case-sensitive coin name.
-// 2. cryptocurrency-icons (jsDelivr, pinned npm version). The old
-//    gh@1.0.0 path 404'd, which is why every coin showed a letter circle.
-//    HL k-prefix tokens (kPEPE, kBONK) strip the k for this source.
-// 3. Letter circle.
+// ─── Token icon: our own copy → Hyperliquid's coin art → open-source set → letter ───
+// 1. /coins/<COIN>.svg — icons copied into the app (public/coins, downloaded by
+//    the one-off tools/icons job), so we don't depend on third-party hosts.
+// 2. app.hyperliquid.xyz/coins/<COIN>.svg — for coins listed after that copy.
+//    Case-sensitive coin name.
+// 3. cryptocurrency-icons (jsDelivr, pinned npm version). HL k-prefix tokens
+//    (kPEPE, kBONK) strip the k for this source.
+// 4. Letter circle.
 // Pass the HL coin name (e.g. "kPEPE"); any casing works for the fallbacks.
-// TODO: copy the icons into /public so we don't depend on third-party hosts.
 
 const HL_BASE = "https://app.hyperliquid.xyz/coins";
 const OSS_BASE = "https://cdn.jsdelivr.net/npm/cryptocurrency-icons@0.18.1/svg/color";
@@ -27,7 +27,7 @@ interface Props {
 }
 
 export function TokenIcon({ symbol, size = 28 }: Props) {
-  const sources = [`${HL_BASE}/${symbol}.svg`, `${OSS_BASE}/${ossSlug(symbol)}.svg`];
+  const sources = [`/coins/${symbol}.svg`, `${HL_BASE}/${symbol}.svg`, `${OSS_BASE}/${ossSlug(symbol)}.svg`];
   const [idx, setIdx] = useState(0);
   const [key, setKey] = useState(symbol);
   if (key !== symbol) { setKey(symbol); setIdx(0); }
