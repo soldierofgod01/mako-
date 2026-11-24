@@ -13,7 +13,7 @@ type Feature = { title: string; body: string; img: string; w: number; h: number;
 const FEATURES: Feature[] = [
   {
     title: "Will the range break or hold?",
-    body: "Mako reads the last 4 hours of price and volatility on any Hyperliquid perp and tells you how likely the range is to break, against how often it usually does.",
+    body: "Mako reads price and volatility on any Hyperliquid perp and tells you how likely the range is to break, against how often it usually does.",
     img: "/f-regime.webp",
     w: 336,
     h: 327,
