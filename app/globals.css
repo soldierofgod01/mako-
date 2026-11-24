@@ -184,19 +184,3 @@ button, input { font: inherit; }
   .wordmark { font-size: 24px; }
   .nav-in { padding: 0 12px; }
 }
-
-/* legal pages */
-.legal { max-width: 720px; margin: 0 auto; padding: 150px 24px 96px; }
-.legal-title { margin: 0; font-family: var(--serif); font-weight: 400; font-size: clamp(36px, 4.6vw, 54px); line-height: 1.06; letter-spacing: -0.02em; font-variation-settings: "opsz" 60; }
-.legal-updated { margin: 12px 0 36px; font-size: 14px; color: var(--faint); }
-.legal h2 { margin: 40px 0 10px; font-size: 20px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); }
-.legal h3 { margin: 22px 0 6px; font-size: 16px; font-weight: 600; color: var(--ink); }
-.legal p, .legal li { font-size: 16px; line-height: 1.7; color: rgba(11, 18, 32, 0.78); }
-.legal p { margin: 0 0 14px; }
-.legal ul { margin: 0 0 14px; padding-left: 22px; }
-.legal li { margin: 4px 0; }
-.legal a { color: var(--ultra); text-decoration: underline; text-underline-offset: 2px; }
-.legal strong { color: var(--ink); font-weight: 600; }
-.foot-links { display: flex; gap: 18px; }
-.foot-links a:hover { color: var(--ink); }
-@media (max-width: 640px) { .legal { padding-top: 120px; } }

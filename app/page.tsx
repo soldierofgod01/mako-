@@ -3,7 +3,6 @@ import Shot from "@/components/Shot"
 import CoinWall from "@/components/CoinWall"
 import Waitlist from "@/components/Waitlist"
 import Features from "@/components/Features"
-import { LegalFooter } from "@/components/Legal"
 
 export default function Home() {
   return (
@@ -58,7 +57,16 @@ export default function Home() {
         <CoinWall />
       </section>
 
-      <LegalFooter />
+      <footer className="foot">
+        <div className="foot-in">
+          <span className="brand">
+            <img src="/mako-star.webp" alt="" width={24} height={24} />
+            <span className="wordmark">MAKO</span>
+          </span>
+          <p>Market information, not financial advice. Trading perpetuals carries a high risk of loss.</p>
+          <span>© {new Date().getFullYear()} Mako</span>
+        </div>
+      </footer>
     </main>
   )
 }
