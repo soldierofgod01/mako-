@@ -310,42 +310,88 @@ export class BubbleLayer extends Layer {
   paneViews() { return this.enabled ? [this.view] : []; }
 
   // One bubble per big order at its average price. Area grows with size
-  // (radius ∝ √size), colour by the side that hit, size printed inside when
-  // it fits, beside it otherwise.
+  // (radius ∝ √size), colour by the side that hit.
+  // Clutter control (beta feedback: bubbles and labels piled on each other):
+  //  - same-side bubbles whose centres fall inside each other on screen merge
+  //    into one (sizes summed, size-weighted position) — depends on zoom;
+  //  - labels are placed biggest first, inside the bubble if the text fits,
+  //    else right / left / above, and only where they hit no other label or
+  //    bubble. A bubble whose label has nowhere free goes unlabelled.
   private drawBubbles(target: Target) {
     const tm = this.timeMap();
     const s = this.series;
     if (!tm || !s || !this.prints.length) return;
-    const sorted = [...this.prints].sort((a, b) => a.usd - b.usd);
+    const minUsd = this.minUsd;
+    const radius = (usd: number) => Math.min(30, 3 * Math.sqrt(usd / minUsd));
     target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
-      ctx.textBaseline = "middle";
-      for (const p of sorted) {
+      type B = { x: number; y: number; usd: number; buy: boolean; r: number };
+      const pts: B[] = [];
+      for (const p of this.prints) {
         const x = tm.x(p.t);
         const y = s.priceToCoordinate(p.px);
         if (x == null || y == null || x < -40 || x > mediaSize.width + 40) continue;
-        const r = Math.min(30, 3 * Math.sqrt(p.usd / this.minUsd));
-        const buy = p.side === 1;
+        pts.push({ x, y, usd: p.usd, buy: p.side === 1, r: radius(p.usd) });
+      }
+      pts.sort((a, b) => b.usd - a.usd);
+      const bubbles: B[] = [];
+      for (const b of pts) {
+        const host = bubbles.find((o) => o.buy === b.buy && Math.hypot(o.x - b.x, o.y - b.y) < Math.max(o.r, b.r));
+        if (!host) { bubbles.push({ ...b }); continue; }
+        const tot = host.usd + b.usd;
+        host.x = (host.x * host.usd + b.x * b.usd) / tot;
+        host.y = (host.y * host.usd + b.y * b.usd) / tot;
+        host.usd = tot;
+        host.r = radius(tot);
+      }
+
+      // Circles: biggest first so smaller ones stay visible on top.
+      ctx.lineWidth = 1;
+      for (const b of bubbles) {
         ctx.beginPath();
-        ctx.arc(x, y, r, 0, Math.PI * 2);
-        ctx.fillStyle = buy ? "rgba(31,184,128,0.35)" : "rgba(239,68,68,0.35)";
+        ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+        ctx.fillStyle = b.buy ? "rgba(31,184,128,0.30)" : "rgba(239,68,68,0.30)";
         ctx.fill();
-        ctx.lineWidth = 1;
-        ctx.strokeStyle = buy ? "rgba(31,184,128,0.95)" : "rgba(239,68,68,0.95)";
+        ctx.strokeStyle = b.buy ? "rgba(31,184,128,0.95)" : "rgba(239,68,68,0.95)";
         ctx.stroke();
-        if (p.usd >= this.minUsd * 3) {
-          const label = k(p.usd);
-          ctx.font = `600 10px Inter, -apple-system, sans-serif`;
-          const tw = ctx.measureText(label).width;
-          if (tw + 6 <= r * 2) {
-            ctx.textAlign = "center";
-            ctx.fillStyle = "rgba(237,237,239,0.95)";
-            ctx.fillText(label, x, y);
-          } else {
-            ctx.textAlign = "left";
-            ctx.fillStyle = buy ? "rgba(31,184,128,1)" : "rgba(239,68,68,1)";
-            ctx.fillText(label, x + r + 3, y);
-          }
+      }
+
+      // Labels: biggest first, no overlaps.
+      ctx.font = `600 10px Inter, -apple-system, sans-serif`;
+      ctx.textBaseline = "middle";
+      type R = { x0: number; y0: number; x1: number; y1: number };
+      const placed: R[] = [];
+      const hitsLabel = (q: R) => placed.some((o) => q.x0 < o.x1 && q.x1 > o.x0 && q.y0 < o.y1 && q.y1 > o.y0);
+      const hitsBubble = (q: R, self: B) => bubbles.some((o) => {
+        if (o === self) return false;
+        const cx = Math.max(q.x0, Math.min(o.x, q.x1));
+        const cy = Math.max(q.y0, Math.min(o.y, q.y1));
+        return Math.hypot(o.x - cx, o.y - cy) < o.r;
+      });
+      const H = 12;
+      for (const b of bubbles) {
+        if (b.usd < minUsd * 3) continue;
+        const label = k(b.usd);
+        const tw = ctx.measureText(label).width;
+        const inside = tw + 6 <= b.r * 2;
+        const spots: { q: R; tx: number; ty: number; align: CanvasTextAlign; inside: boolean }[] = [];
+        if (inside) spots.push({ q: { x0: b.x - tw / 2 - 2, y0: b.y - H / 2, x1: b.x + tw / 2 + 2, y1: b.y + H / 2 }, tx: b.x, ty: b.y, align: "center", inside: true });
+        spots.push(
+          { q: { x0: b.x + b.r + 2, y0: b.y - H / 2, x1: b.x + b.r + 4 + tw, y1: b.y + H / 2 }, tx: b.x + b.r + 3, ty: b.y, align: "left", inside: false },
+          { q: { x0: b.x - b.r - 4 - tw, y0: b.y - H / 2, x1: b.x - b.r - 2, y1: b.y + H / 2 }, tx: b.x - b.r - 3, ty: b.y, align: "right", inside: false },
+          { q: { x0: b.x - tw / 2 - 2, y0: b.y - b.r - 2 - H, x1: b.x + tw / 2 + 2, y1: b.y - b.r - 2 }, tx: b.x, ty: b.y - b.r - 2 - H / 2, align: "center", inside: false },
+        );
+        const spot = spots.find((sp) => !hitsLabel(sp.q) && (sp.inside || !hitsBubble(sp.q, b)));
+        if (!spot) continue;
+        placed.push(spot.q);
+        ctx.textAlign = spot.align;
+        if (!spot.inside) {
+          // Dark halo so outside labels stay readable over candles.
+          ctx.lineWidth = 3;
+          ctx.strokeStyle = "rgba(7,7,9,0.9)";
+          ctx.strokeText(label, spot.tx, spot.ty);
         }
+        ctx.fillStyle = spot.inside ? "rgba(237,237,239,0.95)" : b.buy ? "rgba(31,184,128,1)" : "rgba(239,68,68,1)";
+        ctx.fillText(label, spot.tx, spot.ty);
       }
     });
   }
