@@ -1,0 +1,26 @@
+# One-off: download coin icons for every HL perp into coins/ on this branch,
+# so the app can serve them itself. Runs on pushes to tools/icons.
+name: icons
+on:
+  push:
+    branches: ["tools/icons"]
+    paths: ["tools/**", ".github/workflows/icons.yml"]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node tools/fetch-icons.mjs
+      - run: |
+          git config user.name "mako-icons"
+          git config user.email "icons@users.noreply.github.com"
+          git add -f coins
+          git commit -m "coin icons $(date -u +%FT%H%MZ)" || exit 0
+          git push
