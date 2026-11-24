@@ -30,11 +30,11 @@ const FEATURES: Feature[] = [
   },
   {
     title: "The numbers behind the move.",
-    body: "Price, open interest and funding for any coin, charted side by side, so you can see whether a move has real positioning behind it.",
+    body: "See whether a move has real positioning behind it. Market pulse shows what's unusual right now, Volatility tracks implied and realised vol, and Cost basis shows where top Hyperliquid traders break even and how many are underwater.",
     img: "/f-analytics.webp",
     w: 1120,
-    h: 422,
-    alt: "Mako Analytics for BTC: price, open interest, funding, volume, sharps vs donors and cumulative returns by session",
+    h: 424,
+    alt: "Mako Analytics for BTC with Overview, Market pulse, Volatility and Cost basis tabs: price, open interest, funding, volume, sharps vs donors and cumulative returns by session",
     wide: true,
   },
 ]
