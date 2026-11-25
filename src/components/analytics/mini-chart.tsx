@@ -86,8 +86,8 @@ export function Sparkline({
           {range && (
             <rect x={0} width={w} y={y(range.hi)} height={Math.max(1, y(range.lo) - y(range.hi))} fill="rgba(255,255,255,0.055)" />
           )}
-          {range && <line x1={0} x2={w} y1={y(range.hi)} y2={y(range.hi)} stroke="rgba(255,255,255,0.12)" strokeDasharray="2 3" />}
-          {range && <line x1={0} x2={w} y1={y(range.lo)} y2={y(range.lo)} stroke="rgba(255,255,255,0.12)" strokeDasharray="2 3" />}
+          {range && <line x1={0} x2={w} y1={y(range.hi)} y2={y(range.hi)} stroke="rgba(255,255,255,0.28)" strokeDasharray="2 3" />}
+          {range && <line x1={0} x2={w} y1={y(range.lo)} y2={y(range.lo)} stroke="rgba(255,255,255,0.28)" strokeDasharray="2 3" />}
           {bars ? (
             series.map((p, i) => {
               // Each bar gets an equal slot across the width (works for 5 bars or 90).
