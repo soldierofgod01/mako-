@@ -120,7 +120,7 @@ export function AnalyticsModule() {
     const cut = <T extends { t: number }>(a: T[]) => a.filter((x) => x.t >= since);
     const price: SeriesSpec[] = [{ kind: "area", color: C.blue, data: cut(data.hourly).map((x) => ({ t: x.t, v: x.c })) }];
     const volume: SeriesSpec[] = [{ kind: "histogram", color: C.blue, data: cut(data.hourly).map((x) => ({ t: x.t, v: x.v })) }];
-    const funding: SeriesSpec[] = [{ kind: "line", color: C.amber, data: cut(data.funding).map((x) => ({ t: x.t, v: x.apr })) }];
+    const funding: SeriesSpec[] = [{ kind: "line", color: C.cyan, data: cut(data.funding).map((x) => ({ t: x.t, v: x.apr })) }];
     const oi: SeriesSpec[] = [{ kind: "area", color: C.violet, data: cut(data.oi).map((x) => ({ t: x.t, v: x.oiUsd })) }];
     const cohort: SeriesSpec[] = [
       { kind: "line", color: C.mint, data: cut(data.cohort).map((x) => ({ t: x.t, v: x.divergence })) },
@@ -129,7 +129,7 @@ export function AnalyticsModule() {
     const sessions: SeriesSpec[] = [
       { kind: "line", color: C.blue, data: data.sessions.us.map((x) => ({ t: x.t, v: x.v })) },
       { kind: "line", color: C.violet, data: data.sessions.eu.map((x) => ({ t: x.t, v: x.v })) },
-      { kind: "line", color: C.amber, data: data.sessions.asia.map((x) => ({ t: x.t, v: x.v })) },
+      { kind: "line", color: C.cyan, data: data.sessions.asia.map((x) => ({ t: x.t, v: x.v })) },
     ];
     return { price, volume, funding, oi, cohort, sessions };
   }, [data, range]);
@@ -205,7 +205,7 @@ export function AnalyticsModule() {
             >
               <TimeChart series={S.cohort} format={fmtSigned} zeroLine empty="Logged every 15 minutes when tracked wallets hold this coin. Check back soon." />
             </Panel>
-            <Panel title={`${biasCoin} Cumulative Return by Session`} legend={[{ label: "US", color: C.blue }, { label: "Europe", color: C.violet }, { label: "Asia", color: C.amber }]} note="30d · UTC hours: Asia 0–8, EU 8–14, US 14–24">
+            <Panel title={`${biasCoin} Cumulative Return by Session`} legend={[{ label: "US", color: C.blue }, { label: "Europe", color: C.violet }, { label: "Asia", color: C.cyan }]} note="30d · UTC hours: Asia 0–8, EU 8–14, US 14–24">
               <TimeChart series={S.sessions} format={fmtPct1} zeroLine />
             </Panel>
             <Panel title={`${biasCoin} Average Return by Hour (UTC)`} note={`1h candles, last 30 days · current hour highlighted`}>

@@ -56,12 +56,12 @@ function useDepth(coin: string) {
 
 /**
  * One colour per METRIC, the same one it has on Analytics → Overview / Volatility
- * (price & volume blue, funding amber, OI violet, IV violet, RV blue; puts orange, calls cyan).
+ * (price & volume blue, funding cyan, OI violet, IV violet, RV blue; puts orange, calls cyan).
  */
 const PAL = { blue: "#4C8DFF", violet: "#B26BFF", amber: "#F5B83D", cyan: "#2BD4D9", orange: "#F0643C", mint: "#33FFA3", grey: "#D4D4D8" };
 const METRIC_COLOR: Record<string, string> = {
   rsi: PAL.blue, volume: PAL.blue, rv7: PAL.blue,
-  oi: PAL.violet, funding: PAL.amber, cvd: PAL.grey,
+  oi: PAL.violet, funding: PAL.cyan, cvd: PAL.grey,
   ivrv: PAL.violet, skew: PAL.orange,
   depth: PAL.grey,
 };
