@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import { cn } from "@/lib/utils";
 
 // ════════════════════════════════════════════════════════════════
@@ -52,6 +52,7 @@ export function Sparkline({
 }) {
   const [ref, w, mh] = useSize<HTMLDivElement>();
   const [hover, setHover] = useState<number | null>(null);
+  const gid = useId().replace(/:/g, "");
   if (series.length < 2) return <div className="h-[52px]" />;
 
   const vs = series.map((p) => p.v);
@@ -68,7 +69,7 @@ export function Sparkline({
   const POS = "#1FB880", NEG = "#F0643C";
   const barCol = (v: number, isLast: boolean) => {
     const base = signed ? (v >= 0 ? POS : NEG) : color;
-    return isLast ? base : `${base}${signed ? "8C" : "4D"}`; // last bar solid, history ~55% / 30%
+    return isLast ? base : `${base}B3`; // same solid histogram look as Overview, last bar full strength
   };
   const hv = hover != null ? series[hover] : null;
 
@@ -90,10 +91,10 @@ export function Sparkline({
       {w > 0 && (
         <svg width={w} height={H} className="block overflow-visible">
           {range && (
-            <rect x={0} width={w} y={y(range.hi)} height={Math.max(1, y(range.lo) - y(range.hi))} fill={signed ? "rgba(255,255,255,0.05)" : `${color}14`} />
+            <rect x={0} width={w} y={y(range.hi)} height={Math.max(1, y(range.lo) - y(range.hi))} fill="rgba(255,255,255,0.055)" />
           )}
-          {range && <line x1={0} x2={w} y1={y(range.hi)} y2={y(range.hi)} stroke={signed ? "rgba(255,255,255,0.14)" : `${color}40`} strokeDasharray="2 3" />}
-          {range && <line x1={0} x2={w} y1={y(range.lo)} y2={y(range.lo)} stroke={signed ? "rgba(255,255,255,0.14)" : `${color}40`} strokeDasharray="2 3" />}
+          {range && <line x1={0} x2={w} y1={y(range.hi)} y2={y(range.hi)} stroke="rgba(255,255,255,0.12)" strokeDasharray="2 3" />}
+          {range && <line x1={0} x2={w} y1={y(range.lo)} y2={y(range.lo)} stroke="rgba(255,255,255,0.12)" strokeDasharray="2 3" />}
           {bars ? (
             series.map((p, i) => {
               // Each bar gets an equal slot across the width (works for 5 bars or 90).
@@ -106,7 +107,17 @@ export function Sparkline({
               );
             })
           ) : (
-            <path d={series.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join("")} fill="none" stroke={color} strokeOpacity={0.9} strokeWidth={1.5} />
+            <>
+              {/* Overview's area style: colour + 55 at the line fading to + 05 */}
+              <defs>
+                <linearGradient id={`g${gid}`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={color} stopOpacity={0.33} />
+                  <stop offset="100%" stopColor={color} stopOpacity={0.02} />
+                </linearGradient>
+              </defs>
+              <path d={`${series.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join("")}L${x(series.length - 1).toFixed(1)},${H}L${x(0).toFixed(1)},${H}Z`} fill={`url(#g${gid})`} />
+              <path d={series.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join("")} fill="none" stroke={color} strokeWidth={2} />
+            </>
           )}
           {!bars && !inBand && <circle cx={x(series.length - 1)} cy={y(last.v)} r={7} fill={color} fillOpacity={0.22} />}
           {!bars && <circle cx={x(series.length - 1)} cy={y(last.v)} r={3} fill={inBand ? color : "#FFFFFF"} stroke={inBand ? undefined : color} strokeWidth={inBand ? 0 : 1.5} />}

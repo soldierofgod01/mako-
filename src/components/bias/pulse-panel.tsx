@@ -54,13 +54,21 @@ function useDepth(coin: string) {
   return d;
 }
 
-/** One colour per group, from the Analytics palette (Volatility uses violet for IV, blue for RV). */
-const GROUP_COLOR: Record<string, string> = {
-  price: "#4C8DFF",
-  perps: "#2BD4D9",
-  options: "#B26BFF",
-  liquidity: "#33FFA3",
+/**
+ * One colour per METRIC, the same one it has on Analytics → Overview / Volatility
+ * (price & volume blue, funding amber, OI violet, IV violet, RV blue; puts orange, calls cyan).
+ */
+const PAL = { blue: "#4C8DFF", violet: "#B26BFF", amber: "#F5B83D", cyan: "#2BD4D9", orange: "#F0643C", mint: "#33FFA3", grey: "#D4D4D8" };
+const METRIC_COLOR: Record<string, string> = {
+  rsi: PAL.blue, volume: PAL.blue, rv7: PAL.blue,
+  oi: PAL.violet, funding: PAL.amber, cvd: PAL.grey,
+  ivrv: PAL.violet, skew: PAL.orange,
+  depth: PAL.grey,
 };
+const colorOf = (m: PulseMetric) =>
+  m.id === "skew" ? ((m.value ?? 0) < 0 ? PAL.orange : PAL.cyan) // smile: puts orange, calls cyan
+    : m.id === "cvd" ? ((m.value ?? 0) < 0 ? "#F0643C" : "#1FB880")
+      : METRIC_COLOR[m.id] ?? PAL.grey;
 const isExtreme = (b: Band | null) => b === "low" || b === "high";
 /** Normal-range chips stay grey; only out-of-band readings take the group colour. */
 const chipStyle = (b: Band, col: string): React.CSSProperties | undefined =>
@@ -85,18 +93,15 @@ export function PulsePanel({ vol, coin, oiUsd }: { vol: VolState; coin: string; 
           const ms = p.metrics.filter((m) => m.group === g.id);
           if (!ms.length) return null;
           const sum = groupSummary(ms);
-          const col = GROUP_COLOR[g.id];
           const dr = g.id === "liquidity" ? ms.map(depthRatio).find((r) => r != null) ?? null : null;
           const level = sum.level ?? (dr != null ? depthLevel(dr) : "Live");
           const strong = level === "High" || level === "Low" || level === "Thin";
           return (
             <div key={g.id} className="rounded-lg border border-border bg-[#0C0C0F] px-4 py-3 flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <div className="flex items-center gap-1.5 text-[12px] text-txt-muted">
-                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: col }} />{g.label}
-                </div>
+                <div className="text-[12px] text-txt-muted">{g.label}</div>
                 <div className="text-[16px] font-semibold text-txt-primary mt-0.5">
-                  <span style={strong ? { color: col } : undefined}>{level}</span>
+                  <span className={strong ? "text-white" : undefined}>{level}</span>
                   {sum.trend && <span className="text-[13px] font-medium text-txt-secondary"> · {sum.trend}</span>}
                 </div>
               </div>
@@ -130,14 +135,16 @@ const fmtFor = (id: string) => (v: number) =>
 const GROUP_LABEL: Record<string, string> = Object.fromEntries(GROUPS.map((g) => [g.id, g.label]));
 
 function MetricCard({ m, chart }: { m: PulseMetric; chart?: boolean }) {
-  const col = GROUP_COLOR[m.group];
+  const col = colorOf(m);
   return (
     <div className="rounded-lg border border-border bg-[#0C0C0F] px-3.5 py-3 flex flex-col min-h-0">
       <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.06em] text-txt-muted mb-1">
-        <span className="w-1.5 h-1.5 rounded-full" style={{ background: col }} />{GROUP_LABEL[m.group]}
+        {GROUP_LABEL[m.group]}
       </div>
       <div className="flex items-baseline justify-between gap-2">
-        <span className="text-[12px] text-txt-secondary truncate">{m.label}</span>
+        <span className="flex items-center gap-1.5 text-[12px] text-txt-secondary truncate">
+          {m.series && m.id !== "cvd" && <span className="w-2 h-2 rounded-sm shrink-0" style={{ background: col }} />}{m.label}
+        </span>
         <span className="ds-num text-[17px] font-semibold text-txt-primary whitespace-nowrap">{m.display}</span>
       </div>
       <div className="flex items-center justify-between gap-2 mt-1">
