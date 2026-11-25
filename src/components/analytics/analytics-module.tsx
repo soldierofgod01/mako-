@@ -168,7 +168,7 @@ export function AnalyticsModule() {
             <Stat label="Price" value={ctx ? fmtPrice(ctx.markPx) : "—"} />
             <Stat label="24h" value={ctx ? fmtPct2(ctx.change24hPct) : "—"} tone={ctx ? (ctx.change24hPct >= 0 ? "pos" : "neg") : undefined} />
             <Stat label="Open interest" value={ctx ? usd(ctx.oiUsd) : "—"} />
-            <Stat label="Funding APR" value={ctx ? fmtPct1(ctx.fundingHourly * 24 * 365 * 100) : "—"} />
+            <Stat label="Funding APR · now" value={ctx ? fmtPct1(ctx.fundingHourly * 24 * 365 * 100) : "—"} />
             <Stat label="24h volume" value={ctx ? usd(ctx.volume24hUsd) : "—"} />
             <Stat label="Max leverage" value={ctx ? `${ctx.maxLeverage}×` : "—"} />
           </div>

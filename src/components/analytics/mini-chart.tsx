@@ -36,7 +36,7 @@ const fmtDate = (t: number) => new Date(t).toLocaleDateString("en-GB", { day: "n
 // ─── Sparkline ──────────────────────────────────────────────────
 
 export function Sparkline({
-  series, range, bars, format, height, fill,
+  series, range, bars, format, height, fill, color = "#D4D4D8", signed,
 }: {
   series: { t: number; v: number }[];
   range?: { lo: number; hi: number };
@@ -45,6 +45,10 @@ export function Sparkline({
   height?: number;
   /** Grow to the parent's height (parent must be a flex column). */
   fill?: boolean;
+  /** Series colour (line, bars, band tint, current-value dot). */
+  color?: string;
+  /** Bars whose sign means direction (net flow): green above zero, red below. */
+  signed?: boolean;
 }) {
   const [ref, w, mh] = useSize<HTMLDivElement>();
   const [hover, setHover] = useState<number | null>(null);
@@ -61,8 +65,11 @@ export function Sparkline({
   const y = (v: number) => H - ((v - lo) / (hi - lo)) * H;
   const last = series[series.length - 1];
   const inBand = range ? last.v >= range.lo && last.v <= range.hi : true;
-  const lineCol = "#D4D4D8";
-  const dotCol = inBand ? "#D4D4D8" : "#FFFFFF";
+  const POS = "#1FB880", NEG = "#F0643C";
+  const barCol = (v: number, isLast: boolean) => {
+    const base = signed ? (v >= 0 ? POS : NEG) : color;
+    return isLast ? base : `${base}${signed ? "8C" : "4D"}`; // last bar solid, history ~55% / 30%
+  };
   const hv = hover != null ? series[hover] : null;
 
   return (
@@ -83,10 +90,10 @@ export function Sparkline({
       {w > 0 && (
         <svg width={w} height={H} className="block overflow-visible">
           {range && (
-            <rect x={0} width={w} y={y(range.hi)} height={Math.max(1, y(range.lo) - y(range.hi))} fill="rgba(255,255,255,0.055)" />
+            <rect x={0} width={w} y={y(range.hi)} height={Math.max(1, y(range.lo) - y(range.hi))} fill={signed ? "rgba(255,255,255,0.05)" : `${color}14`} />
           )}
-          {range && <line x1={0} x2={w} y1={y(range.hi)} y2={y(range.hi)} stroke="rgba(255,255,255,0.12)" strokeDasharray="2 3" />}
-          {range && <line x1={0} x2={w} y1={y(range.lo)} y2={y(range.lo)} stroke="rgba(255,255,255,0.12)" strokeDasharray="2 3" />}
+          {range && <line x1={0} x2={w} y1={y(range.hi)} y2={y(range.hi)} stroke={signed ? "rgba(255,255,255,0.14)" : `${color}40`} strokeDasharray="2 3" />}
+          {range && <line x1={0} x2={w} y1={y(range.lo)} y2={y(range.lo)} stroke={signed ? "rgba(255,255,255,0.14)" : `${color}40`} strokeDasharray="2 3" />}
           {bars ? (
             series.map((p, i) => {
               // Each bar gets an equal slot across the width (works for 5 bars or 90).
@@ -95,13 +102,14 @@ export function Sparkline({
               const y0 = y(0), y1 = y(p.v);
               return (
                 <rect key={p.t} x={i * slot + (slot - bw) / 2} width={bw} y={Math.min(y0, y1)} height={Math.max(1, Math.abs(y1 - y0))}
-                  fill={i === series.length - 1 ? dotCol : p.v >= 0 ? "rgba(212,212,216,0.45)" : "rgba(212,212,216,0.28)"} />
+                  fill={barCol(p.v, i === series.length - 1)} />
               );
             })
           ) : (
-            <path d={series.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join("")} fill="none" stroke={lineCol} strokeOpacity={0.75} strokeWidth={1.4} />
+            <path d={series.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join("")} fill="none" stroke={color} strokeOpacity={0.9} strokeWidth={1.5} />
           )}
-          {!bars && <circle cx={x(series.length - 1)} cy={y(last.v)} r={3} fill={dotCol} />}
+          {!bars && !inBand && <circle cx={x(series.length - 1)} cy={y(last.v)} r={7} fill={color} fillOpacity={0.22} />}
+          {!bars && <circle cx={x(series.length - 1)} cy={y(last.v)} r={3} fill={inBand ? color : "#FFFFFF"} stroke={inBand ? undefined : color} strokeWidth={inBand ? 0 : 1.5} />}
           {hv && hover != null && !bars && <line x1={x(hover)} x2={x(hover)} y1={0} y2={H} stroke="rgba(255,255,255,0.25)" />}
         </svg>
       )}
@@ -287,8 +295,8 @@ export function EntryMap({
 // ─── Gauge (metrics without history) ────────────────────────────
 
 /** Horizontal scale with a marker; `zones` shade the ends. For live-only readings. */
-export function Gauge({ value, min, max, center, leftLabel, rightLabel, format }: {
-  value: number; min: number; max: number; center?: number; leftLabel: string; rightLabel: string; format: (v: number) => string;
+export function Gauge({ value, min, max, center, leftLabel, rightLabel, format, color }: {
+  value: number; min: number; max: number; center?: number; leftLabel: string; rightLabel: string; format: (v: number) => string; color?: string;
 }) {
   const pos = Math.max(0, Math.min(1, (value - min) / (max - min)));
   const c = center != null ? (center - min) / (max - min) : null;
@@ -298,7 +306,12 @@ export function Gauge({ value, min, max, center, leftLabel, rightLabel, format }
         <div className="absolute inset-y-0 left-0 w-[20%] rounded-l-full bg-white/[0.06]" />
         <div className="absolute inset-y-0 right-0 w-[20%] rounded-r-full bg-white/[0.06]" />
         {c != null && <div className="absolute -inset-y-1 w-px bg-border-strong" style={{ left: `${c * 100}%` }} />}
-        <div className="absolute -top-[4px] w-[3px] h-4 rounded-full bg-txt-primary" style={{ left: `calc(${pos * 100}% - 1.5px)` }} />
+        {color && (
+          <div className="absolute inset-y-0 rounded-full" style={c != null
+            ? { left: `${Math.min(c, pos) * 100}%`, width: `${Math.abs(pos - c) * 100}%`, background: `${color}59` }
+            : { left: 0, width: `${pos * 100}%`, background: `${color}59` }} />
+        )}
+        <div className="absolute -top-[4px] w-[3px] h-4 rounded-full" style={{ left: `calc(${pos * 100}% - 1.5px)`, background: color ?? "var(--txt-primary, #EDEDEF)", boxShadow: color ? `0 0 0 3px ${color}33` : undefined }} />
       </div>
       <div className="flex justify-between mt-1.5 text-[11.5px] text-txt-muted">
         <span>{leftLabel} · {format(min)}</span>

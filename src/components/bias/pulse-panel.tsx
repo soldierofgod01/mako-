@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import type React from "react";
 import { fmtPrice } from "@/lib/bias/format";
 import type { CohortsResponse } from "@/lib/hooks/use-orderflow";
 import type { VolState } from "@/lib/vol/use-vol";
@@ -53,13 +54,19 @@ function useDepth(coin: string) {
   return d;
 }
 
-const BAND_TONE: Record<Band, string> = {
-  low: "text-txt-primary bg-white/[0.10]",
-  lower: "text-txt-secondary bg-white/[0.04]",
-  mid: "text-txt-secondary bg-white/[0.04]",
-  upper: "text-txt-secondary bg-white/[0.04]",
-  high: "text-txt-primary bg-white/[0.10]",
+/** One colour per group, from the Analytics palette (Volatility uses violet for IV, blue for RV). */
+const GROUP_COLOR: Record<string, string> = {
+  price: "#4C8DFF",
+  perps: "#2BD4D9",
+  options: "#B26BFF",
+  liquidity: "#33FFA3",
 };
+const isExtreme = (b: Band | null) => b === "low" || b === "high";
+/** Normal-range chips stay grey; only out-of-band readings take the group colour. */
+const chipStyle = (b: Band, col: string): React.CSSProperties | undefined =>
+  isExtreme(b) ? { background: `${col}24`, color: col, boxShadow: `inset 0 0 0 1px ${col}40` } : undefined;
+/** Same thresholds as the depth read in pulse.ts. */
+const depthLevel = (r: number) => (r < 1 ? "Thin" : r < 3 ? "Moderate" : "Deep");
 
 export function PulsePanel({ vol, coin, oiUsd }: { vol: VolState; coin: string; oiUsd: number | null }) {
   const depth = useDepth(coin);
@@ -78,12 +85,18 @@ export function PulsePanel({ vol, coin, oiUsd }: { vol: VolState; coin: string; 
           const ms = p.metrics.filter((m) => m.group === g.id);
           if (!ms.length) return null;
           const sum = groupSummary(ms);
+          const col = GROUP_COLOR[g.id];
+          const dr = g.id === "liquidity" ? ms.map(depthRatio).find((r) => r != null) ?? null : null;
+          const level = sum.level ?? (dr != null ? depthLevel(dr) : "Live");
+          const strong = level === "High" || level === "Low" || level === "Thin";
           return (
             <div key={g.id} className="rounded-lg border border-border bg-[#0C0C0F] px-4 py-3 flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <div className="text-[12px] text-txt-muted">{g.label}</div>
+                <div className="flex items-center gap-1.5 text-[12px] text-txt-muted">
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: col }} />{g.label}
+                </div>
                 <div className="text-[16px] font-semibold text-txt-primary mt-0.5">
-                  {sum.level ?? "Live"}
+                  <span style={strong ? { color: col } : undefined}>{level}</span>
                   {sum.trend && <span className="text-[13px] font-medium text-txt-secondary"> · {sum.trend}</span>}
                 </div>
               </div>
@@ -117,16 +130,19 @@ const fmtFor = (id: string) => (v: number) =>
 const GROUP_LABEL: Record<string, string> = Object.fromEntries(GROUPS.map((g) => [g.id, g.label]));
 
 function MetricCard({ m, chart }: { m: PulseMetric; chart?: boolean }) {
+  const col = GROUP_COLOR[m.group];
   return (
     <div className="rounded-lg border border-border bg-[#0C0C0F] px-3.5 py-3 flex flex-col min-h-0">
-      <div className="text-[11px] uppercase tracking-[0.06em] text-txt-muted mb-1">{GROUP_LABEL[m.group]}</div>
+      <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.06em] text-txt-muted mb-1">
+        <span className="w-1.5 h-1.5 rounded-full" style={{ background: col }} />{GROUP_LABEL[m.group]}
+      </div>
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-[12px] text-txt-secondary truncate">{m.label}</span>
         <span className="ds-num text-[17px] font-semibold text-txt-primary whitespace-nowrap">{m.display}</span>
       </div>
       <div className="flex items-center justify-between gap-2 mt-1">
         {m.band ? (
-          <span className={cn("text-[12px] font-medium rounded px-1.5 py-0.5", BAND_TONE[m.band])}>
+          <span className={cn("text-[12px] font-medium rounded px-1.5 py-0.5", !isExtreme(m.band) && "text-txt-secondary bg-white/[0.04]")} style={chipStyle(m.band, col)}>
             {BAND_LABEL[m.band]}{m.pct != null ? ` · p${Math.round(m.pct)}` : ""}
           </span>
         ) : (
@@ -139,12 +155,12 @@ function MetricCard({ m, chart }: { m: PulseMetric; chart?: boolean }) {
         )}
       </div>
       {m.band && m.window && <div className="text-[11.5px] text-txt-muted mt-0.5">{m.window}</div>}
-      {chart && m.series && m.series.length > 2 && <Sparkline fill series={m.series} range={m.range} bars={m.bars} format={fmtFor(m.id)} />}
+      {chart && m.series && m.series.length > 2 && <Sparkline fill series={m.series} range={m.range} bars={m.bars} format={fmtFor(m.id)} color={col} signed={m.id === "cvd"} />}
       {chart && m.id === "skew" && m.value != null && (
-        <Gauge value={m.value} min={-10} max={10} center={0} leftLabel="puts bid" rightLabel="calls bid" format={(v) => `${v > 0 ? "+" : ""}${v}`} />
+        <Gauge value={m.value} min={-10} max={10} center={0} leftLabel="puts bid" rightLabel="calls bid" format={(v) => `${v > 0 ? "+" : ""}${v}`} color={col} />
       )}
       {chart && m.id === "depth" && m.value != null && depthRatio(m) != null && (
-        <Gauge value={depthRatio(m)!} min={0} max={15} leftLabel="thin" rightLabel="deep" format={(v) => `${v}% of OI`} />
+        <Gauge value={depthRatio(m)!} min={0} max={15} leftLabel="thin" rightLabel="deep" format={(v) => `${v}% of OI`} color={col} />
       )}
       <p className="text-[13px] text-[#C2C2C8] leading-[1.45] mt-1">{m.read}</p>
     </div>
