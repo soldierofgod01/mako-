@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import { cn } from "@/lib/utils";
 
 // ════════════════════════════════════════════════════════════════
@@ -48,6 +48,7 @@ export function Sparkline({
 }) {
   const [ref, w, mh] = useSize<HTMLDivElement>();
   const [hover, setHover] = useState<number | null>(null);
+  const gid = useId().replace(/:/g, "");
   if (series.length < 2) return <div className="h-[52px]" />;
 
   const vs = series.map((p) => p.v);
@@ -99,7 +100,17 @@ export function Sparkline({
               );
             })
           ) : (
-            <path d={series.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join("")} fill="none" stroke={lineCol} strokeOpacity={0.75} strokeWidth={1.4} />
+            <>
+              {/* Gradient fill under the line, fading to the bottom (Overview's area style). */}
+              <defs>
+                <linearGradient id={`g${gid}`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={lineCol} stopOpacity={0.22} />
+                  <stop offset="100%" stopColor={lineCol} stopOpacity={0.01} />
+                </linearGradient>
+              </defs>
+              <path d={`${series.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join("")}L${x(series.length - 1).toFixed(1)},${H}L${x(0).toFixed(1)},${H}Z`} fill={`url(#g${gid})`} />
+              <path d={series.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join("")} fill="none" stroke={lineCol} strokeOpacity={0.75} strokeWidth={1.4} />
+            </>
           )}
           {!bars && <circle cx={x(series.length - 1)} cy={y(last.v)} r={3} fill={dotCol} />}
           {hv && hover != null && !bars && <line x1={x(hover)} x2={x(hover)} y1={0} y2={H} stroke="rgba(255,255,255,0.25)" />}
