@@ -81,7 +81,9 @@ button, input { font: inherit; }
   margin: 26px 0 0; padding: 5px 12px; border-radius: 999px; font-size: 13px; color: rgba(11, 18, 32, 0.8);
   background: rgba(255, 255, 255, 0.55); border: 1px solid rgba(255, 255, 255, 0.6); backdrop-filter: blur(8px);
 }
+.built { display: inline-flex; align-items: center; gap: 6px; }
 .built strong { color: var(--ink); font-weight: 700; }
+.built .hl-mark { width: 18px; height: 13px; color: var(--ink); flex: none; }
 
 /* waitlist form */
 .wl { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; width: 100%; max-width: 440px; }
