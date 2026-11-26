@@ -157,7 +157,8 @@ function MarketBar({ coin, onPick, of, vol, regime, panelOpen, onTogglePanel }: 
   const chg = ctx?.change24hPct ?? 0;
   const px = of.lastPx;
   const chgAbs = px != null && ctx ? px - px / (1 + chg / 100) : null;
-  const fundingPct = ctx ? ctx.fundingHourly * 100 : null;
+  // Shown per 8h, like the Screener's default (Hyperliquid pays hourly at 1/8 of this).
+  const funding8h = ctx ? ctx.fundingHourly * 8 * 100 : null;
   const tone = chg >= 0 ? "text-positive" : "text-negative";
   return (
     <div className="h-16 shrink-0 ds-card-panel flex items-center gap-6 pl-2 pr-3">
@@ -179,9 +180,9 @@ function MarketBar({ coin, onPick, of, vol, regime, panelOpen, onTogglePanel }: 
       <Stat label="24h volume" value={ctx ? usd(ctx.volume24hUsd) : "—"} />
       <Stat label="Open interest" value={ctx ? usd(ctx.oiUsd) : "—"} />
       <Stat
-        label="Funding / countdown"
-        value={fundingPct == null ? "—" : `${fundingPct >= 0 ? "+" : ""}${fundingPct.toFixed(4)}%  ${countdown}`}
-        tone={fundingPct == null ? undefined : fundingPct * 8 > 0.03 ? "neg" : fundingPct * 8 < -0.01 ? "pos" : undefined}
+        label="Funding 8h / countdown"
+        value={funding8h == null ? "—" : `${funding8h >= 0 ? "+" : ""}${funding8h.toFixed(4)}%  ${countdown}`}
+        tone={funding8h == null ? undefined : funding8h > 0.03 ? "neg" : funding8h < -0.01 ? "pos" : undefined}
       />
       <VolStat vol={vol} />
       <div className="ml-auto flex items-center gap-2">
