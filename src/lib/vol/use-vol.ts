@@ -9,7 +9,10 @@ import { buildSurface, realizedVol, rollingRv, toRows, type DeribitSummary, type
 //     fetched from the browser (free, no key). BTC/ETH use the main inverse
 //     chains; SOL/XRP/HYPE/AVAX/TRX use Deribit's thinner USDC chains.
 //   • DVOL: Deribit's 30-day implied vol index — BTC and ETH only.
-//   • RV: realised vol from Hyperliquid 1h candles — every coin.
+//   • RV: realised vol from Hyperliquid candles — every coin. 7d / 30d and
+//     the 30d series use DAILY closes (incl. today's live close), the same
+//     method as Market pulse and the usual basis for comparing with DVOL.
+//     Only the 24h figure uses 1h candles, since it needs intraday data.
 // ════════════════════════════════════════════════════════════════
 
 const DERIBIT = "https://www.deribit.com/api/v2/public";
@@ -35,7 +38,7 @@ export interface VolState {
   dvol: { t: number; v: number }[] | null;
   dvolNow: number | null;
   rv: { d1: number | null; d7: number | null; d30: number | null } | null;
-  /** Rolling 30-day realised vol (%), hourly points over the last ~30 days. */
+  /** Rolling 30-day realised vol (%) from daily closes, one point per day over the last ~30 days. */
   rvSeries: { t: number; v: number }[] | null;
   loading: boolean;
   error: boolean;
@@ -86,18 +89,25 @@ export function useVol(coin: string, spot: number | null, chartIntervalMs: numbe
   });
 
   const rvQ = useQuery({
-    queryKey: ["hl-1h-rv-v2", coin],
+    queryKey: ["hl-rv-daily-v3", coin],
     queryFn: async () => {
       const now = Date.now();
-      const raw = await getJson<{ t: number; c: string }[]>(HL_INFO, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ type: "candleSnapshot", req: { coin, interval: "1h", startTime: now - 61 * 24 * 3600_000, endTime: now } }),
-      });
-      const closes = raw.map((k) => +k.c);
-      const PPY = 24 * 365;
-      const series = rollingRv(raw.map((k) => ({ t: k.t, c: +k.c })), 24 * 30, PPY).filter((p) => p.t >= now - 30 * 24 * 3600_000);
-      return { d1: realizedVol(closes, 24, PPY), d7: realizedVol(closes, 24 * 7, PPY), d30: realizedVol(closes, 24 * 30, PPY), series };
+      const candles = (interval: "1h" | "1d", days: number) =>
+        getJson<{ t: number; c: string }[]>(HL_INFO, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ type: "candleSnapshot", req: { coin, interval, startTime: now - days * 24 * 3600_000, endTime: now } }),
+        });
+      const [hourly, daily] = await Promise.all([candles("1h", 2), candles("1d", 75)]);
+      const dk = daily.map((k) => ({ t: k.t, c: +k.c }));
+      const dc = dk.map((k) => k.c);
+      const series = rollingRv(dk, 30, 365).filter((p) => p.t >= now - 31 * 24 * 3600_000);
+      return {
+        d1: realizedVol(hourly.map((k) => +k.c), 24, 24 * 365),
+        d7: realizedVol(dc, 7, 365),
+        d30: realizedVol(dc, 30, 365),
+        series,
+      };
     },
     refetchInterval: 5 * 60_000,
     refetchOnWindowFocus: false,
