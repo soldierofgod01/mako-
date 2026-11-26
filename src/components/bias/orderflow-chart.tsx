@@ -25,7 +25,7 @@ import {
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
-import { Eye, EyeOff, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Eye, EyeOff, X } from "lucide-react";
 import { absorptionMarks, heikinAshi, volumeProfile, vwapSeries, type VolumeProfile } from "@/lib/bias/chart-math";
 import { fmtUsd } from "@/lib/bias/engine";
 import { buildFootprint, niceStep } from "@/lib/bias/footprint";
@@ -39,8 +39,9 @@ import { cn } from "@/lib/utils";
 
 // ════════════════════════════════════════════════════════════════
 // Mako chart — TradingView-standard presentation.
-//   • Clean default: candles + in-pane volume. Everything else is an
-//     indicator from one menu, listed in the legend with hide / remove.
+//   • Clean default: candles + volume. Volume and everything else are
+//     indicators from one menu, listed in the legend with hide / remove.
+//     The legend's indicator list can be collapsed (remembered).
 //   • Legend top-left: symbol line, live/hover OHLC, one row per indicator.
 //   • Values live on the price axis as pills, not as text across candles.
 // ════════════════════════════════════════════════════════════════
@@ -77,11 +78,12 @@ function candleStyle(type: ChartType, footprint: boolean) {
   return { upColor: UP, downColor: DOWN, borderUpColor: UP, borderDownColor: DOWN, wickUpColor: UP, wickDownColor: DOWN, lastValueVisible: true, priceLineVisible: true };
 }
 
-export type IndicatorId = "vwap" | "vpvr" | "profile" | "heatmap" | "footprint" | "bubbles" | "liqs" | "delta" | "cvd" | "dvol" | "rv" | "gex" | "oi" | "regimes" | "funding" | "absorption" | "barstats";
+export type IndicatorId = "volume" | "vwap" | "vpvr" | "profile" | "heatmap" | "footprint" | "bubbles" | "liqs" | "delta" | "cvd" | "dvol" | "rv" | "gex" | "oi" | "regimes" | "funding" | "absorption" | "barstats";
 export type IndicatorState = "off" | "on" | "hidden";
 export type Indicators = Record<IndicatorId, IndicatorState>;
 
 const ALL_INDICATORS: { id: IndicatorId; label: string; desc: string }[] = [
+  { id: "volume", label: "Volume", desc: "Traded volume per candle, in USD · on by default" },
   { id: "vwap", label: "VWAP", desc: "Daily volume-weighted average price" },
   { id: "vpvr", label: "Volume profile", desc: "Visible range · buy/sell split · POC and value area" },
   { id: "profile", label: "Session volume profile", desc: "Today (UTC) · POC and value area" },
@@ -108,13 +110,14 @@ export const PARKED_INDICATORS: IndicatorId[] = ["heatmap", "footprint"];
 export const INDICATORS = ALL_INDICATORS.filter((i) => !PARKED_INDICATORS.includes(i.id));
 
 export const DEFAULT_INDICATORS: Indicators = {
-  vwap: "off", vpvr: "off", profile: "off", heatmap: "off", footprint: "off", bubbles: "off", liqs: "off", delta: "off", cvd: "off", dvol: "off", rv: "off", gex: "off", oi: "off", regimes: "off", funding: "off", absorption: "off", barstats: "off",
+  volume: "on", vwap: "off", vpvr: "off", profile: "off", heatmap: "off", footprint: "off", bubbles: "off", liqs: "off", delta: "off", cvd: "off", dvol: "off", rv: "off", gex: "off", oi: "off", regimes: "off", funding: "off", absorption: "off", barstats: "off",
 };
 
 const on = (s: IndicatorState) => s === "on";
 
 /** Legend swatch per indicator — matches what's drawn. */
 const SWATCH: Partial<Record<IndicatorId, string>> = {
+  volume: "linear-gradient(90deg, rgba(31,184,128,0.6) 50%, rgba(239,68,68,0.6) 50%)",
   vwap: "#E0B341",
   vpvr: "linear-gradient(90deg, rgba(31,184,128,0.8) 50%, rgba(239,68,68,0.8) 50%)",
   profile: "linear-gradient(90deg, rgba(31,184,128,0.8) 50%, rgba(239,68,68,0.8) 50%)",
@@ -203,6 +206,15 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
   const precRef = useRef(-1);
   const fpWasOn = useRef<boolean | null>(null);
   const [hover, setHover] = useState<Hover | null>(null);
+  // Legend indicator list: open by default, remembered across reloads / coin switches.
+  const [legendOpen, setLegendOpen] = useState(true);
+  useEffect(() => {
+    try { if (localStorage.getItem("mako:chart:legend:open") === "0") setLegendOpen(false); } catch { /* ignore */ }
+  }, []);
+  const setLegend = (open: boolean) => {
+    setLegendOpen(open);
+    try { localStorage.setItem("mako:chart:legend:open", open ? "1" : "0"); } catch { /* ignore */ }
+  };
   const [hoverT, setHoverT] = useState<number | null>(null);
   const [paneTops, setPaneTops] = useState<Record<string, number | null>>({});
 
@@ -980,6 +992,11 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
     }
   }, [profile, vpvr, liqLevels, of.lastPx, indicators.profile, indicators.vpvr, indicators.liqs, indicators.footprint]);
 
+  // ── Volume is an indicator: on / hidden / off ──
+  useEffect(() => {
+    volRef.current?.applyOptions({ visible: on(indicators.volume) });
+  }, [indicators.volume, chart]);
+
   // ── Legend values (hover, else latest) ──
   const lastK = displayCandles[displayCandles.length - 1];
   const leg = hover ?? (lastK ? { o: lastK.o, h: lastK.h, l: lastK.l, c: lastK.c, v: lastK.v * lastK.c, t: lastK.t } : null);
@@ -997,6 +1014,7 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
 
   const indValue = (id: IndicatorId): string => {
     switch (id) {
+      case "volume": return leg?.v != null ? fmtUsd(leg.v).replace("+", "") : "";
       case "vwap": return vwapNow != null ? vwapNow.toFixed(prec) : "";
       case "profile": return profile ? `POC ${profile.poc.toFixed(prec)}` : "";
       case "vpvr": return vpvr ? `POC ${vpvr.poc.toFixed(prec)} · ${vpvr.measured >= 0.5 ? "measured flow" : "est. split"}` : "";
@@ -1084,15 +1102,25 @@ export function OrderflowChart({ of, coin, interval, indicators, setIndicators, 
             <span className={tone}>{chg >= 0 ? "+" : ""}{chg.toFixed(prec)} ({chgPct >= 0 ? "+" : ""}{chgPct.toFixed(2)}%)</span>
           </div>
         )}
-        {leg?.v != null && (
-          <div className="mt-0.5 ds-num text-[11.5px] text-txt-muted">Vol <span className="text-txt-secondary">{fmtUsd(leg.v).replace("+", "")}</span></div>
-        )}
-        {priceInds.length > 0 && (
+        {priceInds.length > 0 && legendOpen && (
           <div className="mt-1.5 flex flex-col gap-0.5">
             {priceInds.map((i) => (
               <LegendRow key={i.id} label={i.label} value={indValue(i.id)} hidden={indicators[i.id] === "hidden"} onHide={() => toggleHide(i.id)} onRemove={() => remove(i.id)} dot={SWATCH[i.id]} />
             ))}
           </div>
+        )}
+        {priceInds.length > 0 && (
+          <button
+            onClick={() => setLegend(!legendOpen)}
+            title={legendOpen ? "Hide indicator list" : "Show indicator list"}
+            className={cn(
+              "pointer-events-auto mt-1 flex items-center gap-1 h-[18px] rounded px-1 -ml-1 text-[11px] text-txt-muted hover:text-txt-primary hover:bg-white/[0.06]",
+              !legendOpen && "border border-border bg-[#0F0F12]/90 px-1.5 ml-0",
+            )}
+          >
+            {legendOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            {!legendOpen && <span className="ds-num">{priceInds.length}</span>}
+          </button>
         )}
       </div>
 
