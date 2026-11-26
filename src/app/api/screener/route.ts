@@ -65,7 +65,13 @@ async function build(marketsP: Promise<HLPerpMarket[]>) {
   for (const [coin, c] of Object.entries(snap.byCoin)) liqs[coin] = c.liqLevels;
   const rows = buildScreener(liquid, changes, scan, liqs, history);
   const historyMinutes = Math.max(0, ...changes.map((c) => c.history_minutes ?? 0));
-  return NextResponse.json({ rows, historyMinutes, market, fetchedAt: Date.now() });
+  // Same for every user, so share it at Vercel's edge for 15s (served stale
+  // for up to 60s while one request rebuilds). The proxy's sign-in check runs
+  // before the cache, so cached data still only reaches approved users.
+  return NextResponse.json(
+    { rows, historyMinutes, market, fetchedAt: Date.now() },
+    { headers: { "Vercel-CDN-Cache-Control": "s-maxage=15, stale-while-revalidate=60" } },
+  );
 }
 
 export async function GET() {

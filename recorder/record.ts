@@ -37,11 +37,11 @@ import { BiasSmoother, SMOOTH } from "../src/lib/bias/smooth";
 import { barsNeeded, computeRegime, REGIMES } from "../src/lib/bias/regime";
 import { supabaseRpc } from "../src/lib/track/supabase";
 import type { CoinCohorts } from "../src/lib/cohorts/cohorts";
+import { getCohortSnapshot } from "../src/lib/cohorts/server";
 
 const HL_INFO = process.env.HL_INFO_URL ?? "https://api.hyperliquid.xyz/info";
 const HL_WS = process.env.HL_WS_URL ?? "wss://api.hyperliquid.xyz/ws";
 const DRY_RUN = process.env.FLOW_DRY_RUN === "1"; // log instead of writing (local testing)
-const MAKO = process.env.MAKO_URL ?? "https://mako-seven.vercel.app";
 const COINS = (process.env.COINS ?? "BTC,ETH,SOL,HYPE").split(",").map((s) => s.trim()).filter(Boolean);
 const RUN_MS = Number(process.env.RUN_MINUTES ?? 340) * 60_000;
 const TOKEN = process.env.TRACK_TOKEN ?? "";
@@ -252,17 +252,18 @@ async function pollRegime() {
   } finally { regimeBusy = false; }
 }
 
+// Wallet cohorts are built here, not fetched from Mako's /api/cohorts: the
+// app's data API needs a signed-in, approved user. Same code and 3-min cache
+// as the app (src/lib/cohorts/server.ts).
 async function pollCohorts() {
-  for (const st of S.values()) {
-    try {
-      const r = await fetch(`${MAKO}/api/cohorts?coin=${st.coin}`);
-      if (r.ok) {
-        const j = (await r.json()) as { data: CoinCohorts | null };
-        st.cohort = j.data;
-        st.cohortLoaded = true;
-      }
-    } catch { /* keep last */ }
-  }
+  try {
+    const snap = await getCohortSnapshot();
+    if (!snap.at) return; // nothing read yet (leaderboard / HL down): keep last
+    for (const st of S.values()) {
+      st.cohort = snap.byCoin[st.coin] ?? null;
+      st.cohortLoaded = true;
+    }
+  } catch { /* keep last */ }
 }
 
 // ── Engine tick (every 5s) ───────────────────────────────────────
