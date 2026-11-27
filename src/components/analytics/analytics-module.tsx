@@ -6,6 +6,7 @@ import { CoinPicker, fmtPrice } from "@/components/bias/bias-module";
 import { BarChart, Panel, Stat, TimeChart, type SeriesSpec } from "./charts";
 import { CostBasisPanel, PulsePanel } from "@/components/bias/pulse-panel";
 import { VolPanel } from "@/components/bias/vol-panel";
+import { KeyLevelsPanel } from "./key-levels-panel";
 import { useVol } from "@/lib/vol/use-vol";
 import type { CohortsResponse } from "@/lib/hooks/use-orderflow";
 import { cn } from "@/lib/utils";
@@ -33,9 +34,10 @@ interface Ctx {
 
 const RANGES = { "1W": 7, "1M": 30 } as const;
 
-type ViewId = "overview" | "pulse" | "vol" | "basis";
+type ViewId = "overview" | "levels" | "pulse" | "vol" | "basis";
 const VIEWS: { id: ViewId; label: string }[] = [
   { id: "overview", label: "Overview" },
+  { id: "levels", label: "Key levels" },
   { id: "pulse", label: "Market pulse" },
   { id: "vol", label: "Volatility" },
   { id: "basis", label: "Cost basis" },
@@ -235,6 +237,7 @@ export function AnalyticsModule() {
         <div className="h-[calc(100%-57px)] min-h-[640px]">
           {view === "pulse" && <PulsePanel vol={vol} coin={biasCoin} oiUsd={ctxData?.ctx.oiUsd ?? null} />}
           {view === "vol" && <VolPanel vol={vol} px={px} />}
+          {view === "levels" && <KeyLevelsPanel coin={biasCoin} px={px} vol={vol} cohorts={cohorts && cohorts.coin === biasCoin ? cohorts : null} />}
           {view === "basis" && <CostBasisPanel px={px} cohorts={cohorts && cohorts.coin === biasCoin ? cohorts : null} />}
         </div>
       )}
