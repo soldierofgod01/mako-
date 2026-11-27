@@ -125,9 +125,12 @@ export function KeyLevelsPanel({ coin, px, vol, cohorts }: {
         </section>
 
         {/* Ladder of level tiles — Market pulse tile style */}
-        <section className={cn(CARD, "flex flex-col min-h-0 min-w-0")}>
-          <h3 className="pt-3.5 pb-2 text-center text-[13.5px] font-semibold text-txt-primary tracking-[-0.01em]">Levels, by price</h3>
-          <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-3 flex flex-col gap-2">
+        <section className="flex flex-col min-h-0 min-w-0">
+          <div className="flex items-baseline justify-between px-1 pb-2 shrink-0">
+            <span className="text-[13.5px] font-semibold text-txt-primary">Levels, by price</span>
+            <span className="text-[12px] text-txt-muted">nearest to price in the middle</span>
+          </div>
+          <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2">
             {loading ? (
               Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-[84px] skeleton rounded-lg" />)
             ) : levels.length === 0 ? (
@@ -178,7 +181,7 @@ function SummaryCard({ label, level, loading }: { label: string; level: KeyLevel
 function LevelTile({ l }: { l: KeyLevel }) {
   const side = l.distPct > 0 ? "Resistance" : "Support";
   return (
-    <div className="rounded-lg border border-border bg-void px-3.5 py-3">
+    <div className={cn(CARD, "px-3.5 py-3 shrink-0")}>
       <div className="flex items-center justify-between gap-2">
         <span className="text-[11px] uppercase tracking-[0.06em] text-txt-muted">{side}</span>
         <span className={cn("ds-num text-[12px]", l.distPct > 0 ? "text-negative" : "text-positive")}>{pct(l.distPct)}</span>
