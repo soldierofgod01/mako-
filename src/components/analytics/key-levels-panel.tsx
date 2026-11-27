@@ -1,26 +1,25 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { buildKeyLevels, SOURCE_LABEL, type KeyLevel, type LevelSource } from "@/lib/levels/key-levels";
 import type { VolState } from "@/lib/vol/use-vol";
 import type { CohortsResponse } from "@/lib/hooks/use-orderflow";
 import { fmtPrice } from "@/components/bias/bias-module";
-import { useSize } from "./mini-chart";
+import { TimeChart, type SeriesSpec } from "./charts";
 import { cn } from "@/lib/utils";
 
 // ════════════════════════════════════════════════════════════════
-// Key levels view (Analytics): price with the ranked levels drawn
-// across it, and the ranked list split above / below price.
+// Key levels view (Analytics). Same building blocks as the other views:
+// summary cards on top (like Market pulse), the Overview chart style with
+// levels drawn as price lines, and level tiles in the Market pulse style.
 // ════════════════════════════════════════════════════════════════
 
-const SRC_COLOR: Record<LevelSource, string> = {
-  gamma: "#B26BFF",
-  basis: "#1FB880",
-  liq: "#F5A524",
-  swing: "#4C8DFF",
-};
+const PRICE_C = "#4C8DFF"; // same blue as the Overview price chart
+const CARD = "rounded-lg border border-border bg-[#0C0C0F]";
+const CHIP_STRONG = "text-txt-primary bg-white/[0.10]";
+const CHIP_SOFT = "text-txt-secondary bg-white/[0.04]";
 
-type Candle = { t: number; o: number; h: number; l: number; c: number };
+type Candle = { t: number; h: number; l: number; c: number };
 
 function use1hCandles(coin: string) {
   return useQuery({
@@ -33,13 +32,15 @@ function use1hCandles(coin: string) {
         body: JSON.stringify({ type: "candleSnapshot", req: { coin, interval: "1h", startTime: now - 15 * 86_400_000, endTime: now } }),
       });
       if (!r.ok) throw new Error("candles failed");
-      const raw = (await r.json()) as { t: number; o: string; h: string; l: string; c: string }[];
-      return raw.map((k) => ({ t: k.t, o: +k.o, h: +k.h, l: +k.l, c: +k.c }));
+      const raw = (await r.json()) as { t: number; h: string; l: string; c: string }[];
+      return raw.map((k) => ({ t: k.t, h: +k.h, l: +k.l, c: +k.c }));
     },
     refetchInterval: 5 * 60_000,
     refetchOnWindowFocus: false,
   });
 }
+
+const pct = (d: number) => `${d > 0 ? "+" : ""}${d.toFixed(2)}%`;
 
 export function KeyLevelsPanel({ coin, px, vol, cohorts }: {
   coin: string;
@@ -48,7 +49,6 @@ export function KeyLevelsPanel({ coin, px, vol, cohorts }: {
   cohorts: CohortsResponse | null;
 }) {
   const { data: candles } = use1hCandles(coin);
-  const [hover, setHover] = useState<number | null>(null);
 
   const levels = useMemo(
     () => (px ? buildKeyLevels({
@@ -61,173 +61,146 @@ export function KeyLevelsPanel({ coin, px, vol, cohorts }: {
     [px, vol.surface, cohorts, candles],
   );
 
-  const loading = !px || !candles;
   const above = levels.filter((l) => l.distPct > 0).sort((a, b) => a.distPct - b.distPct);
   const below = levels.filter((l) => l.distPct <= 0).sort((a, b) => b.distPct - a.distPct);
+  const strongest = levels[0] ?? null;
+  const counts = { Strong: 0, Medium: 0, Weak: 0 };
+  levels.forEach((l) => counts[l.strength]++);
+
+  // Chart: 7 days of 1h closes + Strong (solid) and Medium (dashed) levels.
+  const series = useMemo<SeriesSpec[]>(() => {
+    if (!candles?.length) return [];
+    return [{
+      kind: "area",
+      color: PRICE_C,
+      data: candles.slice(-24 * 7).map((k) => ({ t: k.t, v: k.c })),
+      priceLines: levels
+        .filter((l) => l.strength !== "Weak")
+        .map((l) => ({
+          price: l.px,
+          color: l.strength === "Strong" ? "rgba(237,237,239,0.85)" : "rgba(237,237,239,0.35)",
+          width: l.strength === "Strong" ? 2 : 1,
+          dashed: l.strength !== "Strong",
+          title: l.strength,
+        })),
+    }];
+  }, [candles, levels]);
+
   const missing = [
-    !vol.surface?.gex?.length && "gamma (no listed options for this coin)",
+    !vol.surface?.gex?.length && "gamma (no listed options)",
     !cohorts?.data && "wallet data",
   ].filter(Boolean) as string[];
+  const loading = !px || !candles;
 
   return (
     <div className="p-3 h-full flex flex-col gap-3">
-      <div className="flex-1 min-h-0 flex gap-3">
-        {/* Map */}
-        <div className="flex-1 min-w-0 rounded-lg border border-border bg-[#0C0C0F] px-3 pt-2.5 pb-2 flex flex-col">
-          <div className="flex items-baseline justify-between shrink-0">
-            <span className="text-[13px] font-semibold text-txt-primary">Levels map</span>
-            <span className="text-[12px] text-txt-muted">Last 7 days, 1h · line thickness = strength</span>
-          </div>
-          <div className="mt-2 flex-1 min-h-0 relative">
-            {loading ? <div className="absolute inset-0 skeleton rounded" /> : (
-              <LevelsMap candles={candles!.slice(-24 * 7)} px={px!} levels={levels} hover={hover} onHover={setHover} />
-            )}
-          </div>
-          <div className="mt-1.5 flex items-center gap-4 shrink-0">
-            {(Object.keys(SRC_COLOR) as LevelSource[]).map((s) => (
-              <span key={s} className="flex items-center gap-1.5 text-[12px] text-txt-secondary">
-                <span className="w-2 h-2 rounded-full" style={{ background: SRC_COLOR[s] }} />{SOURCE_LABEL[s]}
-              </span>
-            ))}
-          </div>
-        </div>
-
-        {/* Ranked list */}
-        <div className="w-[440px] shrink-0 rounded-lg border border-border bg-[#0C0C0F] flex flex-col min-h-0">
-          <div className="h-11 px-4 flex items-center justify-between border-b border-border shrink-0">
-            <span className="text-[13px] font-semibold text-txt-primary">Ranked levels</span>
-            {px && <span className="ds-num text-[12.5px] text-txt-secondary">Price {fmtPrice(px)}</span>}
-          </div>
-          <div className="flex-1 min-h-0 overflow-y-auto">
-            {loading ? (
-              <div className="p-3 flex flex-col gap-2">{Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-[58px] skeleton rounded" />)}</div>
-            ) : levels.length === 0 ? (
-              <div className="p-4 text-[13px] text-txt-secondary">No levels within 15% of price.</div>
-            ) : (
-              <>
-                <Group title="Above price" rows={above} all={levels} hover={hover} onHover={setHover} />
-                <Group title="Below price" rows={below} all={levels} hover={hover} onHover={setHover} />
-              </>
-            )}
+      {/* Summary — same card style as Market pulse */}
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 shrink-0">
+        <SummaryCard label="Nearest resistance" level={above[0]} loading={loading} />
+        <SummaryCard label="Nearest support" level={below[0]} loading={loading} />
+        <SummaryCard label="Strongest level" level={strongest} loading={loading} />
+        <div className={cn(CARD, "px-4 py-3 flex items-center justify-between gap-3")}>
+          <div className="min-w-0">
+            <div className="text-[12px] text-txt-muted">Levels within 15%</div>
+            <div className="text-[16px] font-semibold text-txt-primary mt-0.5">
+              {loading ? "—" : `${counts.Strong} strong`}
+              {!loading && <span className="text-[13px] font-medium text-txt-secondary"> · {counts.Medium} medium · {counts.Weak} weak</span>}
+            </div>
           </div>
         </div>
       </div>
+
+      <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-3 gap-3">
+        {/* Chart — Overview style */}
+        <section className={cn(CARD, "xl:col-span-2 flex flex-col min-w-0 min-h-[360px]")}>
+          <h3 className="pt-3.5 text-center text-[13.5px] font-semibold text-txt-primary tracking-[-0.01em]">{coin} Price &amp; Key Levels</h3>
+          <div className="flex-1 min-h-0 px-2 pt-2">
+            {loading ? <div className="h-full skeleton rounded" /> : <TimeChart series={series} format={fmtPrice} />}
+          </div>
+          <div className="min-h-[34px] px-3 pb-2.5 pt-1 flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
+            <span className="flex items-center gap-1.5 text-[11.5px] text-txt-secondary"><span className="w-4 h-[2px] rounded bg-[rgba(237,237,239,0.85)]" />Strong</span>
+            <span className="flex items-center gap-1.5 text-[11.5px] text-txt-secondary"><span className="w-4 border-t border-dashed border-[rgba(237,237,239,0.5)]" />Medium</span>
+            <span className="text-[11px] text-txt-muted">Last 7 days, 1h · weak levels listed only</span>
+          </div>
+        </section>
+
+        {/* Ladder of level tiles — Market pulse tile style */}
+        <section className={cn(CARD, "flex flex-col min-h-0 min-w-0")}>
+          <h3 className="pt-3.5 pb-2 text-center text-[13.5px] font-semibold text-txt-primary tracking-[-0.01em]">Levels, by price</h3>
+          <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-3 flex flex-col gap-2">
+            {loading ? (
+              Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-[84px] skeleton rounded-lg" />)
+            ) : levels.length === 0 ? (
+              <div className="text-[13px] text-txt-secondary text-center pt-6">No levels within 15% of price.</div>
+            ) : (
+              <>
+                {[...above].reverse().map((l) => <LevelTile key={l.px} l={l} />)}
+                <div className="flex items-center gap-2 py-1">
+                  <span className="flex-1 border-t border-dashed border-border" />
+                  <span className="ds-num text-[12.5px] text-txt-primary">Price {fmtPrice(px!)}</span>
+                  <span className="flex-1 border-t border-dashed border-border" />
+                </div>
+                {below.map((l) => <LevelTile key={l.px} l={l} />)}
+              </>
+            )}
+          </div>
+        </section>
+      </div>
+
       <p className="shrink-0 text-[12px] text-txt-muted leading-[1.5]">
-        Combines gamma strikes (Deribit), cost-basis and liquidation clusters (tracked Hyperliquid wallets) and 4h swing highs and lows (last 14 days),
-        within 15% of price. Nearby levels merge; more independent sources agreeing ranks a level higher. A map of where things pile up, not a forecast.
+        Combines gamma strikes (Deribit), cost-basis and liquidation clusters (tracked Hyperliquid wallets) and 4h swing highs and lows (last 14 days), within 15% of price.
+        Nearby levels merge; the more independent sources agree, the stronger the level. A map of where things pile up, not a forecast.
         {missing.length > 0 && ` Missing for ${coin}: ${missing.join(", ")}.`}
       </p>
     </div>
   );
 }
 
-function Group({ title, rows, all, hover, onHover }: {
-  title: string; rows: KeyLevel[]; all: KeyLevel[]; hover: number | null; onHover: (i: number | null) => void;
-}) {
-  if (!rows.length) return null;
+function SummaryCard({ label, level, loading }: { label: string; level: KeyLevel | null | undefined; loading: boolean }) {
   return (
-    <div>
-      <div className="px-4 pt-3 pb-1 text-[11px] uppercase tracking-[0.06em] text-txt-muted">{title}</div>
-      {rows.map((l) => {
-        const i = all.indexOf(l);
-        return (
-          <div
-            key={l.px}
-            onMouseEnter={() => onHover(i)}
-            onMouseLeave={() => onHover(null)}
-            className={cn("px-4 py-2.5 border-b border-border/60 last:border-0 cursor-default", hover === i && "bg-elevated")}
-          >
-            <div className="flex items-center gap-3">
-              <span className="ds-num text-[15px] font-semibold text-txt-primary w-[92px]">{fmtPrice(l.px)}</span>
-              <span className={cn("ds-num text-[12.5px] w-[58px]", l.distPct > 0 ? "text-negative" : "text-positive")}>
-                {l.distPct > 0 ? "+" : ""}{l.distPct.toFixed(2)}%
-              </span>
-              <span className={cn(
-                "text-[11.5px] font-medium px-2 py-0.5 rounded-full",
-                l.strength === "Strong" ? "bg-white/90 text-black" : l.strength === "Medium" ? "bg-elevated-2 text-txt-primary" : "text-txt-muted",
-              )}>{l.strength}</span>
-              <span className="ml-auto flex gap-1">
-                {l.sources.map((s) => <span key={s} className="w-2 h-2 rounded-full" style={{ background: SRC_COLOR[s] }} title={SOURCE_LABEL[s]} />)}
-              </span>
-            </div>
-            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
-              {dedupe(l).map((p) => (
-                <span key={p.label + p.px} className="text-[12px] text-txt-secondary">
-                  <span style={{ color: SRC_COLOR[p.source] }}>●</span> {p.label}
-                </span>
-              ))}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-/** Show the biggest piece of each source (plus a second if it's large), so rows stay short. */
-function dedupe(l: KeyLevel) {
-  const out: KeyLevel["parts"] = [];
-  for (const s of l.sources) {
-    const ps = l.parts.filter((p) => p.source === s).sort((a, b) => b.weight - a.weight);
-    out.push(ps[0]);
-    if (ps[1] && ps[1].weight > 0.6) out.push(ps[1]);
-  }
-  return out;
-}
-
-// ─── Map: price line + level lines ──────────────────────────────
-
-function LevelsMap({ candles, px, levels, hover, onHover }: {
-  candles: Candle[]; px: number; levels: KeyLevel[]; hover: number | null; onHover: (i: number | null) => void;
-}) {
-  const [ref, w, h] = useSize<HTMLDivElement>();
-  const L = 6, R = 132, T = 10, B = 22;
-  const prices = [...candles.flatMap((k) => [k.h, k.l]), ...levels.map((l) => l.px)];
-  let lo = Math.min(...prices), hi = Math.max(...prices);
-  const pad = (hi - lo) * 0.05; lo -= pad; hi += pad;
-  const pw = Math.max(1, w - L - R), ph = Math.max(1, h - T - B);
-  const X = (i: number) => L + (i / Math.max(1, candles.length - 1)) * pw;
-  const Y = (v: number) => T + ph - ((v - lo) / (hi - lo)) * ph;
-  const maxScore = Math.max(...levels.map((l) => l.score), 1);
-  // Keep right-edge labels from overlapping: nudge apart by at least 14px, strongest first.
-  const labelY = new Map<number, number>();
-  const placed: number[] = [];
-  [...levels].sort((a, b) => b.score - a.score).forEach((l) => {
-    let y = Y(l.px);
-    for (let k = 0; k < 20 && placed.some((p) => Math.abs(p - y) < 14); k++) y += (k % 2 ? -1 : 1) * 14 * Math.ceil((k + 1) / 2);
-    placed.push(y); labelY.set(l.px, y);
-  });
-  const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(f * (candles.length - 1)));
-
-  return (
-    <div ref={ref} className="absolute inset-0">
-      {w > 0 && h > 0 && (
-        <svg width={w} height={h} className="block">
-          {levels.map((l, i) => {
-            const y = Y(l.px), strong = l.score / maxScore, on = hover === i;
-            const col = l.distPct > 0 ? "248,113,113" : "52,211,153";
-            return (
-              <g key={l.px} onMouseEnter={() => onHover(i)} onMouseLeave={() => onHover(null)} style={{ cursor: "default" }}>
-                <line x1={L} x2={L + pw} y1={y} y2={y} stroke={`rgba(${col},${on ? 0.95 : 0.25 + 0.5 * strong})`} strokeWidth={on ? 2.5 : 0.8 + 2.2 * strong} />
-                <line x1={L + pw} x2={L + pw + 8} y1={y} y2={labelY.get(l.px)!} stroke="rgba(255,255,255,0.15)" />
-                <g transform={`translate(${L + pw + 10}, ${labelY.get(l.px)! + 4})`}>
-                  {l.sources.map((s, k) => <circle key={s} cx={k * 7 + 3} cy={-4} r={2.6} fill={SRC_COLOR[s]} />)}
-                  <text x={l.sources.length * 7 + 4} y={0} fontSize={11.5} fontFamily="var(--font-mono, ui-monospace)" fill={on ? "#FFFFFF" : "#C2C2C8"}>{fmtPrice(l.px)}</text>
-                </g>
-                <rect x={L} width={pw} y={y - 5} height={10} fill="transparent" />
-              </g>
-            );
-          })}
-          <path d={candles.map((k, i) => `${i ? "L" : "M"}${X(i).toFixed(1)},${Y(k.c).toFixed(1)}`).join("")} fill="none" stroke="#E4E4E7" strokeWidth={1.5} />
-          <line x1={L} x2={L + pw} y1={Y(px)} y2={Y(px)} stroke="rgba(255,255,255,0.5)" strokeDasharray="3 3" />
-          <circle cx={X(candles.length - 1)} cy={Y(px)} r={3.5} fill="#FFFFFF" />
-          {ticks.map((i, k) => (
-            <text key={k} x={X(i)} y={h - 6} fontSize={11} fill="#8A8A91" textAnchor={k === 0 ? "start" : k === ticks.length - 1 ? "end" : "middle"}>
-              {new Date(candles[i].t).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
-            </text>
-          ))}
-        </svg>
+    <div className={cn(CARD, "px-4 py-3 flex items-center justify-between gap-3")}>
+      <div className="min-w-0">
+        <div className="text-[12px] text-txt-muted">{label}</div>
+        <div className="text-[16px] font-semibold text-txt-primary mt-0.5 ds-num">
+          {loading || !level ? "—" : fmtPrice(level.px)}
+          {!loading && level && (
+            <span className={cn("text-[13px] font-medium", level.distPct > 0 ? "text-negative" : "text-positive")}> {pct(level.distPct)}</span>
+          )}
+        </div>
+      </div>
+      {!loading && level && (
+        <span className={cn("text-[12px] font-medium rounded px-1.5 py-0.5 shrink-0", level.strength === "Strong" ? CHIP_STRONG : CHIP_SOFT)}>{level.strength}</span>
       )}
     </div>
   );
+}
+
+function LevelTile({ l }: { l: KeyLevel }) {
+  const side = l.distPct > 0 ? "Resistance" : "Support";
+  return (
+    <div className="rounded-lg border border-border bg-void px-3.5 py-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11px] uppercase tracking-[0.06em] text-txt-muted">{side}</span>
+        <span className={cn("ds-num text-[12px]", l.distPct > 0 ? "text-negative" : "text-positive")}>{pct(l.distPct)}</span>
+      </div>
+      <div className="flex items-center justify-between gap-2 mt-1">
+        <span className="ds-num text-[17px] font-semibold text-txt-primary">{fmtPrice(l.px)}</span>
+        <span className={cn("text-[12px] font-medium rounded px-1.5 py-0.5", l.strength === "Strong" ? CHIP_STRONG : CHIP_SOFT)}>
+          {l.strength} · {l.sources.length} source{l.sources.length > 1 ? "s" : ""}
+        </span>
+      </div>
+      <div className="mt-1.5 flex flex-col gap-0.5">
+        {pieces(l).map((p) => (
+          <span key={p.label + p.px} className="text-[12.5px] text-[#C2C2C8] leading-[1.45]">
+            <span className="text-txt-muted">{SOURCE_LABEL[p.source as LevelSource]} · </span>{p.label.replace(/^Gamma strike · /, "")}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** The biggest piece of each source, so tiles stay short. */
+function pieces(l: KeyLevel) {
+  return l.sources.map((s) => l.parts.filter((p) => p.source === s).sort((a, b) => b.weight - a.weight)[0]);
 }

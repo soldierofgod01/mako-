@@ -40,6 +40,8 @@ export interface SeriesSpec {
   data: { t: number; v: number; color?: string }[];
   color: string;
   scaleId?: string;
+  /** Horizontal lines with a price tag on the axis (e.g. key levels). Included in auto-scaling. */
+  priceLines?: { price: number; color: string; width?: 1 | 2 | 3; dashed?: boolean; title?: string }[];
 }
 
 export function TimeChart({ series, format, zeroLine, empty }: { series: SeriesSpec[]; format: (v: number) => string; zeroLine?: boolean; empty?: string }) {
@@ -73,7 +75,23 @@ export function TimeChart({ series, format, zeroLine, empty }: { series: SeriesS
       const data = s.data.map((d) => ({ time: Math.floor(d.t / 1000) as UTCTimestamp, value: d.v, ...(d.color ? { color: d.color } : {}) }));
       const common = { priceLineVisible: false, lastValueVisible: true, priceScaleId: s.scaleId ?? "right" };
       if (s.kind === "area") {
-        c.addSeries(AreaSeries, { ...common, lineColor: s.color, lineWidth: 2, topColor: s.color + "55", bottomColor: s.color + "05" }).setData(data);
+        const lines = s.priceLines ?? [];
+        const as = c.addSeries(AreaSeries, {
+          ...common, lineColor: s.color, lineWidth: 2, topColor: s.color + "55", bottomColor: s.color + "05",
+          // Keep every level line in view, not just the price range.
+          ...(lines.length ? {
+            autoscaleInfoProvider: (orig: () => { priceRange: { minValue: number; maxValue: number } } | null) => {
+              const r = orig();
+              if (!r) return r;
+              const ps = lines.map((l) => l.price);
+              return { ...r, priceRange: { minValue: Math.min(r.priceRange.minValue, ...ps), maxValue: Math.max(r.priceRange.maxValue, ...ps) } };
+            },
+          } : {}),
+        });
+        as.setData(data);
+        for (const l of lines) {
+          as.createPriceLine({ price: l.price, color: l.color, lineWidth: l.width ?? 1, lineStyle: l.dashed ? LineStyle.Dashed : LineStyle.Solid, axisLabelVisible: true, title: l.title ?? "" });
+        }
       } else if (s.kind === "line") {
         const ls = c.addSeries(LineSeries, { ...common, color: s.color, lineWidth: 2, crosshairMarkerRadius: 3 });
         ls.setData(data);
