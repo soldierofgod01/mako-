@@ -16,8 +16,6 @@ import { cn } from "@/lib/utils";
 
 const PRICE_C = "#4C8DFF"; // same blue as the Overview price chart
 const CARD = "rounded-lg border border-border bg-[#0C0C0F]";
-const CHIP_STRONG = "text-txt-primary bg-white/[0.10]";
-const CHIP_SOFT = "text-txt-secondary bg-white/[0.04]";
 
 type Candle = { t: number; h: number; l: number; c: number };
 
@@ -159,6 +157,35 @@ export function KeyLevelsPanel({ coin, px, vol, cohorts }: {
   );
 }
 
+type Strength = KeyLevel["strength"];
+const BARS: Record<Strength, number> = { Strong: 3, Medium: 2, Weak: 1 };
+
+/** Strength pill with a 3-bar meter — readable at a glance. */
+function StrengthBadge({ s, size = "md" }: { s: Strength; size?: "md" | "lg" }) {
+  const pill =
+    s === "Strong" ? "bg-[#EDEDEF] text-black"
+    : s === "Medium" ? "bg-white/[0.14] text-txt-primary"
+    : "border border-white/[0.14] text-txt-secondary";
+  const bar = (on: boolean) =>
+    s === "Strong" ? (on ? "bg-black" : "bg-black/20") : on ? "bg-txt-primary" : "bg-white/[0.18]";
+  return (
+    <span className={cn("inline-flex items-center gap-2 rounded-full font-semibold shrink-0", size === "lg" ? "h-7 px-3 text-[13px]" : "h-6 px-2.5 text-[12.5px]", pill)}>
+      <span className="flex items-end gap-[2px]">
+        {[1, 2, 3].map((i) => (
+          <span key={i} className={cn("w-[3px] rounded-[1px]", bar(i <= BARS[s]))} style={{ height: 4 + i * 3 }} />
+        ))}
+      </span>
+      {s}
+    </span>
+  );
+}
+
+const ACCENT: Record<Strength, string> = {
+  Strong: "before:bg-[#EDEDEF]",
+  Medium: "before:bg-white/[0.35]",
+  Weak: "before:bg-white/[0.10]",
+};
+
 function SummaryCard({ label, level, loading }: { label: string; level: KeyLevel | null | undefined; loading: boolean }) {
   return (
     <div className={cn(CARD, "px-4 py-3 flex items-center justify-between gap-3")}>
@@ -171,9 +198,7 @@ function SummaryCard({ label, level, loading }: { label: string; level: KeyLevel
           )}
         </div>
       </div>
-      {!loading && level && (
-        <span className={cn("text-[12px] font-medium rounded px-1.5 py-0.5 shrink-0", level.strength === "Strong" ? CHIP_STRONG : CHIP_SOFT)}>{level.strength}</span>
-      )}
+      {!loading && level && <StrengthBadge s={level.strength} />}
     </div>
   );
 }
@@ -181,15 +206,16 @@ function SummaryCard({ label, level, loading }: { label: string; level: KeyLevel
 function LevelTile({ l }: { l: KeyLevel }) {
   const side = l.distPct > 0 ? "Resistance" : "Support";
   return (
-    <div className={cn(CARD, "px-3.5 py-3 shrink-0")}>
+    <div className={cn(CARD, "relative overflow-hidden pl-4 pr-3.5 py-3 shrink-0 before:absolute before:left-0 before:inset-y-0 before:w-[3px]", ACCENT[l.strength])}>
       <div className="flex items-center justify-between gap-2">
         <span className="text-[11px] uppercase tracking-[0.06em] text-txt-muted">{side}</span>
         <span className={cn("ds-num text-[12px]", l.distPct > 0 ? "text-negative" : "text-positive")}>{pct(l.distPct)}</span>
       </div>
       <div className="flex items-center justify-between gap-2 mt-1">
         <span className="ds-num text-[17px] font-semibold text-txt-primary">{fmtPrice(l.px)}</span>
-        <span className={cn("text-[12px] font-medium rounded px-1.5 py-0.5", l.strength === "Strong" ? CHIP_STRONG : CHIP_SOFT)}>
-          {l.strength} · {l.sources.length} source{l.sources.length > 1 ? "s" : ""}
+        <span className="flex items-center gap-2">
+          <span className="text-[12px] text-txt-muted">{l.sources.length} source{l.sources.length > 1 ? "s" : ""}</span>
+          <StrengthBadge s={l.strength} />
         </span>
       </div>
       <div className="mt-1.5 flex flex-col gap-0.5">
