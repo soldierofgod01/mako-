@@ -7,7 +7,6 @@ import { useAppStore } from "@/stores/app-store";
 import { useOrderflow, CHART_INTERVALS, INTERVAL_LABEL, horizonForInterval, type ChartInterval, type OrderflowState } from "@/lib/hooks/use-orderflow";
 import { CHART_TYPES, DEFAULT_INDICATORS, INDICATORS, OrderflowChart, PARKED_INDICATORS, type ChartType, type Indicators, type ScaleMode, type ViewCmd } from "./orderflow-chart";
 import { OrderBookPanel } from "./order-book";
-import { BottomPanel } from "./bottom-panel";
 import { useVol, type VolState } from "@/lib/vol/use-vol";
 import { useRegime } from "@/lib/bias/use-regime";
 import { RegimeCard, RegimeChip } from "./regime-card";
@@ -29,7 +28,6 @@ export { fmtPrice };
 // Layout (exchange-terminal style, Nov 2026):
 //   market bar
 //   chart (own toolbar) │ live order book │ bias + evidence
-//   bottom tabs (cohorts, liqs, prints, log)│
 //   status strip
 // Interpretation, not trade calls — the trader decides.
 // ════════════════════════════════════════════════════════════════
@@ -130,7 +128,6 @@ export function BiasModule() {
               <OrderBookPanel feed={of.live} coin={biasCoin} whaleMin={of.whaleMin} />
             </div>
           </div>
-          <BottomPanel of={of} />
         </div>
         {panelOpen && (
           <aside className="terminal-side w-[320px] xl:w-[340px] shrink-0 overflow-y-auto rounded-xl">
